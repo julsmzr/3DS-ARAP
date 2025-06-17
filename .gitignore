@@ -6,4 +6,7 @@ cmake_install.cmake
 Makefile
 
 # Executables
-main
+**main
+
+# VS Code settings
+.vscode/
