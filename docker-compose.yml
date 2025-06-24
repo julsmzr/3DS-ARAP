@@ -1,0 +1,10 @@
+version: '3.9'
+
+services:
+  interactive-arap:
+    image: interactive-arap
+    container_name: interactive-arap-container
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    tty: true
