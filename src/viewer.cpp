@@ -1,4 +1,5 @@
 #include "viewer.h"
+#include "load_mesh.h"
 #include <polyscope/polyscope.h>
 #include <imgui.h>
 #include <iostream>
@@ -7,6 +8,24 @@
 namespace fs = std::filesystem;
 
 namespace Window {
+
+void loadMeshFromFile(const std::string& filepath) {
+    std::cout << "Loading mesh from: " << filepath << std::endl;
+    
+    // Clear any existing meshes
+    polyscope::removeAllStructures();
+    
+    MeshLoader::Mesh mesh = MeshLoader::loadPLY(filepath);
+    
+    if (mesh.isValid()) {
+        // Extract filename for display name
+        std::string meshName = fs::path(filepath).stem().string();
+        MeshLoader::displayMesh(mesh, meshName);
+        std::cout << "Successfully loaded and displayed mesh: " << meshName << std::endl;
+    } else {
+        std::cerr << "Failed to load mesh from: " << filepath << std::endl;
+    }
+}
 
 void setupUI() {
     if (ImGui::Button("Load Mesh")) {
@@ -20,8 +39,7 @@ void setupUI() {
                 if (entry.is_regular_file() && entry.path().extension() == ".ply") {
                     std::string filename = entry.path().filename().string();
                     if (ImGui::Selectable(filename.c_str())) {
-                        // TODO: Implement proper mesh loading
-                        std::cout << "Selected mesh: " << filename << std::endl;
+                        loadMeshFromFile(entry.path().string());
                         ImGui::CloseCurrentPopup();
                     }
                 }
