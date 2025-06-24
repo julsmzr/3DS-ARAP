@@ -28,7 +28,7 @@ void loadMeshFromFile(const std::string& filepath) {
 }
 
 void setupUI() {
-    if (ImGui::Button("Load Mesh")) {
+    if (ImGui::Button("Select Mesh")) {
         ImGui::OpenPopup("Select Mesh");
     }
     
@@ -54,10 +54,13 @@ void setupUI() {
 
 void Viewer::init() {
     polyscope::init();
+    polyscope::options::usePrefsFile = false;
     
-    // Set smaller UI scale
-    polyscope::state::userCallback = [](){ 
-        ImGui::GetIO().FontGlobalScale = ViewerConfig::UI_SCALE_FACTOR;
+    // Configure Polyscope options to match frontend.cpp
+    polyscope::options::programName = "Interactive ARAP Viewer";
+    polyscope::options::verbosity = 1;
+    
+    polyscope::state::userCallback = []() {         
         setupUI();
     };
 }

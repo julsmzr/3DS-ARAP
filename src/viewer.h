@@ -1,10 +1,6 @@
 #pragma once
 #include <string> 
 
-namespace ViewerConfig {
-    constexpr float UI_SCALE_FACTOR = 0.6f;
-}
-
 namespace Window {
     
     class Viewer {
