@@ -6,6 +6,7 @@
 #include <imgui.h>
 #include <filesystem>
 #include <iostream>
+#include <chrono>
 
 namespace fs = std::filesystem;
 namespace Window {
@@ -15,6 +16,13 @@ std::vector<Eigen::Vector3d> selectedPoints;
 polyscope::PointCloud*     highlightPoints        = nullptr;
 bool                       deformationModeEnabled = false;
 polyscope::CameraParameters lockedCameraParams;
+
+// dragging state
+static bool                        isDragging        = false;
+static int                         dragVertexIdx     = -1;
+static int                         sampleRateFPS     = 60;
+static double                      sampleInterval    = 1.0 / sampleRateFPS;
+static std::chrono::steady_clock::time_point lastSampleTime = std::chrono::steady_clock::now();
 
 void clearSelection() {
   selectedPoints.clear();
@@ -72,6 +80,7 @@ void setupUI() {
             }
             clearSelection();
             deformationModeEnabled = false;
+            isDragging = false;
             ImGui::CloseCurrentPopup();
           }
         }
@@ -88,12 +97,29 @@ void vertexPickerCallback() {
   ImGuiIO& io = ImGui::GetIO();
   if (io.WantCaptureMouse) return;
 
+  auto now = std::chrono::steady_clock::now();
+  if (isDragging && ImGui::IsMouseDown(0)) {
+    if (std::chrono::duration<double>(now - lastSampleTime).count() >= sampleInterval) {
+      lastSampleTime = now;
+      glm::vec2 mpos{io.MousePos.x, io.MousePos.y};
+      std::cout << "drag: screen=("
+                << mpos.x << "," << mpos.y << ")\n";
+    }
+  }
+
+  if (ImGui::IsMouseReleased(0) && isDragging) {
+    isDragging = false;
+    dragVertexIdx = -1;
+    return;
+  }
+
   if (ImGui::IsMouseClicked(1)) {
     if (!deformationModeEnabled) {
       clearSelection();
     }
     return;
   }
+
   if (ImGui::IsMouseClicked(0)) {
     glm::vec2 mpos{io.MousePos.x, io.MousePos.y};
     auto pr = polyscope::pickAtScreenCoords(mpos);
@@ -123,6 +149,10 @@ void vertexPickerCallback() {
           highlightPoints = polyscope::registerPointCloud("vertex highlight", M);
           highlightPoints->setPointRadius(0.004f);
           highlightPoints->setPointColor({1.0f, 0.0f, 0.0f});
+        } else {
+          isDragging = true;
+          dragVertexIdx = mpr.index;
+          lastSampleTime = now;
         }
       }
     }
