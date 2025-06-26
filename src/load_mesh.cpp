@@ -1,111 +1,79 @@
 #include "load_mesh.h"
-#include <fstream>
-#include <sstream>
-#include <iostream>
-#include <polyscope/polyscope.h>
-#include <polyscope/surface_mesh.h>
 #include <happly.h>
+#include <polyscope/polyscope.h>
+#include <iostream>
 
 namespace MeshLoader {
 
 Mesh loadPLY(const std::string& filepath) {
-    Mesh mesh;
-    
-    try {
-        // Use happly to load both ASCII and binary PLY files
-        happly::PLYData plyIn(filepath);
-        
-        // Get vertex positions
-        std::vector<double> vPos_x = plyIn.getElement("vertex").getProperty<double>("x");
-        std::vector<double> vPos_y = plyIn.getElement("vertex").getProperty<double>("y");
-        std::vector<double> vPos_z = plyIn.getElement("vertex").getProperty<double>("z");
-        
-        // Store vertices with scaling
-        mesh.vertices.reserve(vPos_x.size());
-        auto SCALE = 1000.0;
-        for (size_t i = 0; i < vPos_x.size(); i++) {
-            mesh.vertices.emplace_back(SCALE * vPos_x[i], SCALE * vPos_y[i], SCALE * vPos_z[i]);
-        }
-        
-        // Get face indices
-        try {
-            auto faceIndices = plyIn.getElement("face").getListProperty<int>("vertex_indices");
-            mesh.faces = faceIndices;
-        } catch (...) {
-            try {
-                auto faceIndices = plyIn.getElement("face").getListProperty<size_t>("vertex_indices");
-                mesh.faces.resize(faceIndices.size());
-                for (size_t i = 0; i < faceIndices.size(); i++) {
-                    mesh.faces[i].resize(faceIndices[i].size());
-                    for (size_t j = 0; j < faceIndices[i].size(); j++) {
-                        mesh.faces[i][j] = static_cast<int>(faceIndices[i][j]);
-                    }
-                }
-            } catch (...) {
-                std::cerr << "Warning: Could not load face indices" << std::endl;
-            }
-        }
-        
-        std::cout << "Loaded mesh with " << mesh.vertices.size() << " vertices and " 
-                  << mesh.faces.size() << " faces" << std::endl;
-        
-    } catch (const std::exception& e) {
-        std::cerr << "Error loading PLY file: " << e.what() << std::endl;
+  Mesh mesh;
+  try {
+    happly::PLYData plyIn(filepath);
+
+    auto xs = plyIn.getElement("vertex").getProperty<double>("x");
+    auto ys = plyIn.getElement("vertex").getProperty<double>("y");
+    auto zs = plyIn.getElement("vertex").getProperty<double>("z");
+    mesh.vertices.reserve(xs.size());
+    const double SCALE = 1000.0;
+    for (size_t i = 0; i < xs.size(); i++) {
+      mesh.vertices.emplace_back(SCALE*xs[i], SCALE*ys[i], SCALE*zs[i]);
     }
-    
-    return mesh;
+
+    try {
+      mesh.faces = plyIn.getElement("face").getListProperty<int>("vertex_indices");
+    } catch (...) {
+      // alternate size_t list
+      auto fl = plyIn.getElement("face").getListProperty<size_t>("vertex_indices");
+      mesh.faces.resize(fl.size());
+      for (size_t i = 0; i < fl.size(); i++) {
+        mesh.faces[i].assign(fl[i].begin(), fl[i].end());
+      }
+    }
+
+    std::cout << "Loaded " << mesh.vertices.size() 
+              << " verts, " << mesh.faces.size() << " faces\n";
+  } catch (std::exception& e) {
+    std::cerr << "PLY load error: " << e.what() << "\n";
+  }
+  return mesh;
 }
 
-void displayMesh(const Mesh& mesh, const std::string& name) {
-    if (!mesh.isValid()) {
-        std::cerr << "Error: Cannot display invalid mesh" << std::endl;
-        return;
-    }
-    
-    // Convert vertices to matrix format for polyscope
-    Eigen::MatrixXd vertices(mesh.vertices.size(), 3);
-    for (size_t i = 0; i < mesh.vertices.size(); ++i) {
-        vertices.row(i) = mesh.vertices[i];
-    }
-    
-    // Convert faces to matrix format (assuming triangular faces)
-    // For non-triangular faces, we'll triangulate them
-    std::vector<std::array<int, 3>> triangles;
-    
-    for (const auto& face : mesh.faces) {
-        if (face.size() == 3) {
-            // Triangle face
-            triangles.push_back({face[0], face[1], face[2]});
-        } else if (face.size() == 4) {
-            // Quad face - split into two triangles
-            triangles.push_back({face[0], face[1], face[2]});
-            triangles.push_back({face[0], face[2], face[3]});
-        } else if (face.size() > 4) {
-            // Polygon - fan triangulation
-            for (size_t i = 1; i < face.size() - 1; ++i) {
-                triangles.push_back({face[0], face[i], face[i+1]});
-            }
-        }
-    }
-    
-    Eigen::MatrixXi faces(triangles.size(), 3);
-    for (size_t i = 0; i < triangles.size(); ++i) {
-        faces.row(i) << triangles[i][0], triangles[i][1], triangles[i][2];
-    }
-    
-    // Register and display the mesh
-    auto psMesh = polyscope::registerSurfaceMesh(name, vertices, faces);
-    psMesh->setEnabled(true);
-    psMesh->setEdgeWidth(1.0);
-    psMesh->setEdgeColor({0.0f, 0.0f, 0.0f});
+polyscope::SurfaceMesh* displayMesh(const Mesh& mesh, const std::string& name) {
+  if (!mesh.isValid()) {
+    std::cerr << "Invalid mesh\n";
+    return nullptr;
+  }
 
-    psMesh->setSelectionMode(polyscope::MeshSelectionMode::VerticesOnly);
+  Eigen::MatrixXd V(mesh.vertices.size(), 3);
+  for (size_t i=0; i<mesh.vertices.size(); i++) 
+    V.row(i) = mesh.vertices[i];
 
-    
-    // Automatically fit the camera to show the mesh
-    polyscope::view::resetCameraToHomeView();
-    
-    std::cout << "Displayed mesh '" << name << "' with " << triangles.size() << " triangles" << std::endl;
+  std::vector<std::array<int,3>> T;
+  for (auto& f : mesh.faces) {
+    if (f.size()==3) {
+      T.push_back({f[0],f[1],f[2]});
+    } else if (f.size()==4) {
+      T.push_back({f[0],f[1],f[2]});
+      T.push_back({f[0],f[2],f[3]});
+    } else {
+      for (size_t i=1; i+1<f.size(); i++) {
+        T.push_back({f[0], f[i], f[i+1]});
+      }
+    }
+  }
+
+  Eigen::MatrixXi F(T.size(), 3);
+  for (size_t i=0; i<T.size(); i++) 
+    F.row(i) = Eigen::Vector3i{T[i][0], T[i][1], T[i][2]};
+
+  auto ps = polyscope::registerSurfaceMesh(name, V, F);
+  ps->setEnabled(true);
+  ps->setEdgeWidth(1.0);
+  ps->setEdgeColor({0,0,0});
+  ps->setSelectionMode(polyscope::MeshSelectionMode::VerticesOnly);
+  polyscope::view::resetCameraToHomeView();
+
+  return ps;
 }
 
 } // namespace MeshLoader
