@@ -9,7 +9,7 @@ include(FetchContent)
 FetchContent_Declare(
    polyscope
    GIT_REPOSITORY https://github.com/nmwsharp/polyscope.git
-   GIT_TAG        v2.3.0
+   GIT_TAG        v2.4.0
 )
 
 # Fetch Eigen

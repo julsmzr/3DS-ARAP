@@ -96,6 +96,11 @@ void displayMesh(const Mesh& mesh, const std::string& name) {
     // Register and display the mesh
     auto psMesh = polyscope::registerSurfaceMesh(name, vertices, faces);
     psMesh->setEnabled(true);
+    psMesh->setEdgeWidth(1.0);
+    psMesh->setEdgeColor({0.0f, 0.0f, 0.0f});
+
+    psMesh->setSelectionMode(polyscope::MeshSelectionMode::VerticesOnly);
+
     
     // Automatically fit the camera to show the mesh
     polyscope::view::resetCameraToHomeView();

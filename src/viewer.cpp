@@ -28,7 +28,7 @@ void loadMeshFromFile(const std::string& filepath) {
 }
 
 void setupUI() {
-    if (ImGui::Button("Select Mesh")) {
+    if (ImGui::Button("Select Mesh...")) {
         ImGui::OpenPopup("Select Mesh");
     }
     
@@ -76,4 +76,3 @@ void startViewer() {
 }
 
 } // namespace Window
-
