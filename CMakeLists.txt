@@ -35,7 +35,7 @@ if(NOT happly_POPULATED)
 endif()
 
 # Create main executable
-add_executable(main src/main.cpp src/viewer.cpp src/load_mesh.cpp)
+add_executable(main src/main.cpp src/viewer.cpp src/load_mesh.cpp src/solver.cpp)
 
 # Ensure proper C++ settings
 set_property(TARGET main PROPERTY CXX_STANDARD 17)

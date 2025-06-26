@@ -2,9 +2,10 @@
 #include "viewer.h"
 
 int main() {
-    std::cout << "Interactive ARAP\n" << std::endl;
-    
+#ifndef NDEBUG
+    std::cout << "[DEBUG] Running in debug mode\n";
+#endif
+    std::cout << "Interactive ARAP\n\n";
     Window::startViewer();
-    
     return 0;
 }
