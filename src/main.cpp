@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <iostream>
 #include "viewer.h"
+#include "load_mesh.h"
 
 // Equation 3
 float energy_at_vertex(
@@ -142,40 +143,118 @@ void arap_solve(
     }
 }
 
-void interactive_arap() {
-    std::cout << "Interactive ARAP\n" << std::endl;
-    
-    std::vector<Eigen::Vector3f> p = {
-        {0.f, 0.f, 0.f},
-        {1.f, 0.f, 0.f},
-        {0.f, 1.f, 0.f}
-    };
+void compute_cotangent_weights(
+    const std::vector<Eigen::Vector3f>& vertices,
+    const std::vector<std::vector<int>>& faces,
+    std::vector<std::vector<int>>& neighbors,
+    std::vector<std::unordered_map<int, float>>& weights
+) {
+    const int n = vertices.size();
+    neighbors.resize(n);
+    weights.resize(n);
 
-    std::vector<std::vector<int>> neighbors = {
-        {1, 2},
-        {0, 2},
-        {0, 1}
-    };
+    for (const auto& f : faces) {
+        if (f.size() < 3) continue;
 
-    std::vector<std::unordered_map<int, float>> weights(3);
-    for (int i = 0; i < 3; ++i) {
-        for (int j : neighbors[i]) {
-            weights[i][j] = 1.0f;
+        for (int i = 0; i < f.size(); ++i) {
+            int i0 = f[i];
+            int i1 = f[(i + 1) % f.size()];
+            int i2 = f[(i + 2) % f.size()];
+
+            const auto& v0 = vertices[i0];
+            const auto& v1 = vertices[i1];
+            const auto& v2 = vertices[i2];
+
+            Eigen::Vector3f e0 = v1 - v0;
+            Eigen::Vector3f e1 = v2 - v0;
+
+            float cotangent = e0.dot(e1) / (e0.cross(e1)).norm();
+
+            weights[i1][i2] += cotangent;
+            weights[i2][i1] += cotangent;
+
+            neighbors[i1].push_back(i2);
+            neighbors[i2].push_back(i1);
         }
     }
 
+    // Remove duplicate neighbor entries
+    for (auto& nbrs : neighbors) {
+        std::sort(nbrs.begin(), nbrs.end());
+        nbrs.erase(std::unique(nbrs.begin(), nbrs.end()), nbrs.end());
+    }
+}
+
+void extractARAPDataFromMesh(
+    const MeshLoader::Mesh& mesh,
+    std::vector<Eigen::Vector3f>& p
+) {
+    p.clear();
+    for (const auto& v : mesh.vertices) {
+        p.emplace_back(v.x(), v.y(), v.z());
+    }
+
+    std::vector<std::vector<int>> faces;
+    for (const auto& f : mesh.faces) {
+        std::vector<int> faceVec(f.begin(), f.end());
+        faces.push_back(faceVec);
+    }
+}
+
+void interactive_arap() {
+    std::cout << "Interactive ARAP\n" << std::endl;
+    
+    if (!Window::currentMesh) {
+        std::cerr << "no mesh loaded.\n";
+        return;
+    }
+
+    const auto& mesh = Window::currentMesh->data;
+
+    std::vector<Eigen::Vector3f> p;
+    for (const auto& v : mesh.vertices) {
+        p.emplace_back(v.x(), v.y(), v.z());
+    }
+
+    std::vector<std::vector<int>> faces;
+    for (const auto& f : mesh.faces) {
+        std::vector<int> faceVec(f.begin(), f.end());
+        faces.push_back(faceVec);
+    }
+
+    std::vector<std::vector<int>> neighbors;
+    std::vector<std::unordered_map<int, float>> weights;
+
+    extractARAPDataFromMesh(mesh, p);
+    std::cout << "Extracted ARAP data from mesh" << std::endl;
+    compute_cotangent_weights(p, faces, neighbors, weights);
+    std::cout << "Computed cotn weights" << std::endl;
+
     std::unordered_map<int, Eigen::Vector3f> constraints;
     constraints[0] = p[0];
-    constraints[1] = p[1] + Eigen::Vector3f(0.2f, 0.0f, 0.0f);
+    if (p.size() > 1) {
+        constraints[1] = p[1] + Eigen::Vector3f(20.0f, 15.0f, 34.0f);
+        int movable = 100;
+        constraints[movable] = p[movable] + Eigen::Vector3f(20.0f, 80.0f, 77.0f);
+    }
 
     std::vector<Eigen::Vector3f> p_prime;
 
-    arap_solve(p, neighbors, weights, constraints, p_prime, 10);
+    std::cout << "Solving arap" << std::endl;
+    arap_solve(p, neighbors, weights, constraints, p_prime, 3);
+    std::cout << "Solved arap" << std::endl;
 
     std::cout << "Deformed positions:\n";
     for (const auto& v : p_prime) {
-        std::cout << v.transpose() << "\n";
+        // std::cout << v.transpose() << "\n";
     }
+
+    std::vector<glm::vec3> updatedVerts;
+    for (const auto& v : p_prime) {
+        updatedVerts.emplace_back(v.x(), v.y(), v.z());
+    }
+    Window::currentMesh->view->updateVertexPositions(updatedVerts);
+    std::cout << "Updated (deformed) mesh.\n";
 }
 
 int main() {
@@ -183,7 +262,6 @@ int main() {
     std::cout << "[DEBUG] Running in debug mode\n";
 #endif
     std::cout << "Interactive ARAP\n\n";
-    // interactive_arap(); TODO main thread
-    Window::startViewer(); // TODO GUI thread
+    Window::startViewer();
     return 0;
 }
