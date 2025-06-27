@@ -98,3 +98,50 @@ void build_laplacian_and_rhs(
     L.resize(n, n);
     L.setFromTriplets(triplets.begin(), triplets.end());
 }
+
+void arap_solve(
+    const std::vector<Eigen::Vector3f>& p,
+    const std::vector<std::vector<int>>& neighbors,
+    const std::vector<std::unordered_map<int, float>>& weights,
+    const std::unordered_map<int, Eigen::Vector3f>& constraints,
+    std::vector<Eigen::Vector3f>& p_prime,
+    int iterations = 5
+) {
+    const int n = p.size();
+    p_prime = p;
+
+    std::vector<Eigen::Matrix3f> R(n);
+
+    for (int iter = 0; iter < iterations; ++iter) {
+        for (int i = 0; i < n; ++i) {
+            R[i] = compute_optimal_rotation(i, p, p_prime, neighbors[i], weights[i]);
+        }
+
+        Eigen::SparseMatrix<float> L;
+        Eigen::MatrixXf b;
+        build_laplacian_and_rhs(p, R, neighbors, weights, L, b);
+
+        for (const auto& [idx, pos] : constraints) {
+            L.coeffRef(idx, idx) += 1e10f;
+            b.row(idx) = 1e10f * pos.transpose();
+        }
+
+        Eigen::SimplicialLDLT<Eigen::SparseMatrix<float>> solver;
+        solver.compute(L);
+
+        if (solver.info() != Eigen::Success) {
+            std::cerr << "L factorization failed.\n";
+            return;
+        }
+
+        Eigen::MatrixXf p_prime_mat = solver.solve(b);
+        if (solver.info() != Eigen::Success) {
+            std::cerr << "Solve failed.\n";
+            return;
+        }
+
+        for (int i = 0; i < n; ++i) {
+            p_prime[i] = p_prime_mat.row(i).transpose();
+        }
+    }
+}
