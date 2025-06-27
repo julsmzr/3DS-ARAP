@@ -3,6 +3,7 @@
 #include <vector>
 #include <unordered_map>
 #include <iostream>
+#include "viewer.h"
 
 // Equation 3
 float energy_at_vertex(
@@ -178,6 +179,11 @@ void interactive_arap() {
 }
 
 int main() {
-    interactive_arap();
+#ifndef NDEBUG
+    std::cout << "[DEBUG] Running in debug mode\n";
+#endif
+    std::cout << "Interactive ARAP\n\n";
+    // interactive_arap(); TODO main thread
+    Window::startViewer(); // TODO GUI thread
     return 0;
 }

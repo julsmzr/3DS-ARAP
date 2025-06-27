@@ -1,13 +1,15 @@
-3DS-ARAP
+# 3DS Interactive ARAP
 
-#### Docker setup
+### Docker setup
 1. Create the docker image: `docker build -t interactive-arap .`
 > For Apple Silicon, try: `docker build --platform=linux/amd64 -t interactive-arap .`
 2. Run the docker container: `docker run -it -v $(pwd):/workspace interactive-arap`
 
-#### CMake build
-1. `mkdir build`
-2. `cd build`
-3. `cmake ..`
-4. `make`
-5. `./main`
+### CMake build 
+```bash
+mkdir -p build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release .. # optimized
+#cmake -DCMAKE_BUILD_TYPE=Release .. # for debugging
+cmake --build .
+cd .. && ./build/main
+```
