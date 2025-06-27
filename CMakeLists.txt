@@ -3,11 +3,13 @@ project(InteractiveArap)
 
 set(CMAKE_CXX_STANDARD 17)
 
-find_package(Torch REQUIRED)
+# Add Eigen
+find_package(Eigen3 REQUIRED)
+include_directories(${EIGEN3_INCLUDE_DIR})
 
 # Create main executable
 add_executable(main src/main.cpp)
-target_link_libraries(main "${TORCH_LIBRARIES}")
+target_link_libraries(main Eigen3::Eigen)
 
 # Ensure proper C++ settings
 set_property(TARGET main PROPERTY CXX_STANDARD 17)
