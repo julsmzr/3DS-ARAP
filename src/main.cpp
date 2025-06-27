@@ -60,11 +60,6 @@ Eigen::Matrix3f compute_optimal_rotation(
     return R;
 }
 
-int main() {
-    std::cout << "Interactive ARAP\n" << std::endl;
-    return 0;
-}
-
 // Equation 9
 void build_laplacian_and_rhs(
     const std::vector<Eigen::Vector3f>& p,
@@ -144,4 +139,45 @@ void arap_solve(
             p_prime[i] = p_prime_mat.row(i).transpose();
         }
     }
+}
+
+void interactive_arap() {
+    std::cout << "Interactive ARAP\n" << std::endl;
+    
+    std::vector<Eigen::Vector3f> p = {
+        {0.f, 0.f, 0.f},
+        {1.f, 0.f, 0.f},
+        {0.f, 1.f, 0.f}
+    };
+
+    std::vector<std::vector<int>> neighbors = {
+        {1, 2},
+        {0, 2},
+        {0, 1}
+    };
+
+    std::vector<std::unordered_map<int, float>> weights(3);
+    for (int i = 0; i < 3; ++i) {
+        for (int j : neighbors[i]) {
+            weights[i][j] = 1.0f;
+        }
+    }
+
+    std::unordered_map<int, Eigen::Vector3f> constraints;
+    constraints[0] = p[0];
+    constraints[1] = p[1] + Eigen::Vector3f(0.2f, 0.0f, 0.0f);
+
+    std::vector<Eigen::Vector3f> p_prime;
+
+    arap_solve(p, neighbors, weights, constraints, p_prime, 10);
+
+    std::cout << "Deformed positions:\n";
+    for (const auto& v : p_prime) {
+        std::cout << v.transpose() << "\n";
+    }
+}
+
+int main() {
+    interactive_arap();
+    return 0;
 }
