@@ -10,3 +10,7 @@ Makefile
 
 # VS Code settings
 .vscode/
+
+# PolyScope files
+.polyscope.ini
+imgui.ini
