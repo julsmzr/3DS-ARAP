@@ -81,9 +81,14 @@ private:
     MeshLoader::Mesh m_mesh;
     size_t n;
 
+    //Anchors, i.e. vertices that are fixed
     std::vector<unsigned> m_anchorIndices;
     std::vector<Eigen::Vector3d> m_anchorPositions;
+
+    //index of vertex that is dragged
     unsigned m_dragIndex;
+
+    //if index is a constraint or not
     std::vector<bool> m_isHandle;
 
     std::vector<std::set<unsigned>> m_vertexNeighbors;
