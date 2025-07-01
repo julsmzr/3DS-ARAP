@@ -25,7 +25,7 @@ void Solver::init(Mesh mesh){
 }
 
 void Solver::setAnchors(const std::vector<unsigned>& anchorIndices, const std::vector<Vector3d>& anchorPositions) {
-    // m_anchorPositions = anchorPositions;
+    // m_anchorPositions = anchorPositions; //Commented this out and tried to use m_mesh instead because for some reason m_mesh.vertices[idx] =/= anchorPositions for the same idx
     m_anchorIndices = anchorIndices;
 
     m_anchorPositions.clear();
