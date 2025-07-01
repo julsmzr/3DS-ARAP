@@ -18,9 +18,11 @@ namespace Window {
 // globals
 polyscope::SurfaceMesh*       currentMesh            = nullptr;
 std::vector<Eigen::Vector3d>  selectedPoints;
+std::vector<unsigned>         selectedIndices;
 polyscope::PointCloud*        highlightPoints        = nullptr;
 bool                          deformationModeEnabled = false;
 polyscope::CameraParameters   lockedCameraParams;
+Solver                       solver                = Solver();
 
 // drag‐state
 static bool                        isDragging     = false;
@@ -46,6 +48,7 @@ void clearSelection() {
     polyscope::removeStructure(dragPath->name);
     dragPath = nullptr;
   }
+  solver.clearAnchors();
   std::cout << "[Info] Selection cleared\n";
 }
 
@@ -91,6 +94,7 @@ void setupUI() {
             auto M = MeshLoader::loadPLY(e.path().string());
             if (M.isValid()) {
               currentMesh = MeshLoader::displayMesh(M, e.path().stem().string());
+              solver.init(M);
             }
             ImGui::CloseCurrentPopup();
           }
@@ -143,6 +147,7 @@ void vertexPickerCallback() {
             polyscope::removeStructure(dragPath->name);
             dragPath = nullptr;
           }
+          solver.setDragIndex(mpr.index);
           std::cout << "[Deform] start drag screen=("
                     << mpos.x << "," << mpos.y
                     << ") world=("
@@ -189,6 +194,7 @@ void vertexPickerCallback() {
     // end drag
     if (isDragging && !ImGui::IsMouseDown(0)) {
       isDragging = false;
+      solver.deform(5, dragSamples.back());
       std::cout << "[Deform] end drag\n";
     }
     return;
@@ -212,9 +218,11 @@ void vertexPickerCallback() {
                   << "), vertex=" << mpr.index << "\n";
 
         selectedPoints.emplace_back(pr.position.x, pr.position.y, pr.position.z);
+        selectedIndices.emplace_back(static_cast<unsigned>(mpr.index));
         if (highlightPoints) {
           polyscope::removeStructure(highlightPoints->name);
         }
+        solver.setAnchors(selectedIndices, selectedPoints);
         Eigen::MatrixXd M(selectedPoints.size(), 3);
         for (size_t i = 0; i < selectedPoints.size(); i++) {
           M.row(i) = selectedPoints[i];
