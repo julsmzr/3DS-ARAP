@@ -179,7 +179,7 @@ void setupUI() {
     if (ImGui::Checkbox("Real-time Solving", &realTimeSolving)) {
       if (realTimeSolving) {
         std::cout << "[Info] Switched to real-time ARAP solving\n";
-        // Clear any debug path when switching to real-time
+        // Clear any dragged path when switching to real-time
         if (dragPath) {
           polyscope::removeStructure(dragPath->name);
           dragPath = nullptr;
@@ -206,7 +206,7 @@ void setupUI() {
     if (ImGui::Button("Solve ARAP")) {
       solver.solveARAP();
       updateMeshVisualization();
-      // Clear debug path after solving
+      // Clear dragged path after solving
       if (dragPath) {
         polyscope::removeStructure(dragPath->name);
         dragPath = nullptr;
@@ -226,10 +226,14 @@ void setupUI() {
           if (ImGui::Selectable(fn.c_str())) {
             polyscope::removeAllStructures();
             clearSelection();
+
             deformationModeEnabled = false;
+            restoreAutoScaling();
+            
             auto M = MeshLoader::loadPLY(e.path().string());
             if (M.isValid()) {
               currentMesh = MeshLoader::displayMesh(M, e.path().stem().string());
+              polyscope::view::resetCameraToHomeView();
               
               // Convert mesh data to Eigen format and pass to solver
               Eigen::MatrixXd vertices(M.vertices.size(), 3);
@@ -367,7 +371,7 @@ void vertexPickerCallback() {
 
         dragSamples.push_back(wp);
         
-        // On-demand mode: show debug path
+        // On-demand mode: show dragged path
         if (!realTimeSolving) {
           if (dragPath) {
             polyscope::removeStructure(dragPath->name);
@@ -375,7 +379,6 @@ void vertexPickerCallback() {
           }
           int n = int(dragSamples.size());
           if (n >= 2) {
-#ifndef NDEBUG // debug mode: show drag path
             Eigen::MatrixXd nodes(n,3);
             for (int i = 0; i < n; i++) nodes.row(i) = dragSamples[i];
             Eigen::MatrixXi edges(n-1,2);
@@ -383,7 +386,6 @@ void vertexPickerCallback() {
             dragPath = polyscope::registerCurveNetwork("drag path", nodes, edges);
             dragPath->setRadius(0.001);
             dragPath->setColor({0.0f, 0.0f, 1.0f});
-#endif
           }
         }
       }
