@@ -27,6 +27,9 @@ Solver::ARAPSolver            solver;
 // vertex dragging state
 int                           draggedVertexIndex     = -1;
 
+// ARAP solving mode
+static bool                   realTimeSolving        = false;
+
 // drag‐state
 static bool                        isDragging     = false;
 static glm::vec2                   dragStartScreen;
@@ -113,9 +116,37 @@ void setupUI() {
     ImGui::Text("Faces: %d", (int)solver.getFaces().rows());
     ImGui::Text("Selected: %d vertices", (int)selectedVertexIndices.size());
     
+    // Toggle between real-time and on-demand solving
+    if (ImGui::Checkbox("Real-time Solving", &realTimeSolving)) {
+      if (realTimeSolving) {
+        std::cout << "[Info] Switched to real-time ARAP solving\n";
+        // Clear any debug path when switching to real-time
+        if (dragPath) {
+          polyscope::removeStructure(dragPath->name);
+          dragPath = nullptr;
+        }
+      } else {
+        std::cout << "[Info] Switched to on-demand ARAP solving\n";
+      }
+    }
+    
+    // ARAP solve button (disabled in real-time mode)
+    if (realTimeSolving) {
+      ImGui::BeginDisabled();
+    }
     if (ImGui::Button("Solve ARAP")) {
       solver.solveARAP();
       updateMeshVisualization();
+      // Clear debug path after solving
+      if (dragPath) {
+        polyscope::removeStructure(dragPath->name);
+        dragPath = nullptr;
+      }
+    }
+    if (realTimeSolving) {
+      ImGui::EndDisabled();
+      ImGui::SameLine();
+      ImGui::Text("(disabled in real-time mode)");
     }
   }
 
@@ -236,10 +267,36 @@ void vertexPickerCallback() {
         // Update the vertex position in solver and mesh
         if (draggedVertexIndex >= 0 && solver.hasMesh()) {
           solver.updateVertex(draggedVertexIndex, wp);
+          
+          if (realTimeSolving) {
+            // Real-time mode: solve ARAP immediately
+            solver.solveARAP();
+          }
+          
           updateMeshVisualization();
         }
 
         dragSamples.push_back(wp);
+        
+        // On-demand mode: show debug path
+        if (!realTimeSolving) {
+          if (dragPath) {
+            polyscope::removeStructure(dragPath->name);
+            dragPath = nullptr;
+          }
+          int n = int(dragSamples.size());
+          if (n >= 2) {
+#ifndef NDEBUG // debug mode: show drag path
+            Eigen::MatrixXd nodes(n,3);
+            for (int i = 0; i < n; i++) nodes.row(i) = dragSamples[i];
+            Eigen::MatrixXi edges(n-1,2);
+            for (int i = 0; i < n-1; i++) edges.row(i) << i, i+1;
+            dragPath = polyscope::registerCurveNetwork("drag path", nodes, edges);
+            dragPath->setRadius(0.001);
+            dragPath->setColor({0.0f, 0.0f, 1.0f});
+#endif
+          }
+        }
       }
     }
 
