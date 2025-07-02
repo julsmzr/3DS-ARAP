@@ -39,9 +39,21 @@ static std::vector<Eigen::Vector3d> dragSamples;
 static polyscope::CurveNetwork*    dragPath       = nullptr;
 
 // sampling
-static constexpr double sampleRate     = 60.0;
-static constexpr double sampleInterval = 1.0 / sampleRate;
+static float                  targetFrameTime        = 1.0f / 30.0f;  // Target 30fps
+static float                  currentSampleRate      = 60.0f;
+static float                  avgSolveTime           = 0.016f;  // Initial estimate: 16ms
+static double                 currentSampleInterval  = 1.0 / 60.0;
 static auto lastSampleTime = std::chrono::steady_clock::now();
+
+void updateSampleRate() {
+    if (realTimeSolving) {
+        // Adaptive mode: adjust based on solve performance
+        float targetSampleRate = 30.0f;  // Base target
+        float adaptedRate = targetSampleRate * (targetFrameTime / avgSolveTime);
+        currentSampleRate = std::clamp(adaptedRate, 1.0f, 120.0f);
+        currentSampleInterval = 1.0 / currentSampleRate;
+    }
+}
 
 void updateMeshVisualization() {
     if (currentMesh && solver.hasMesh()) {
@@ -125,9 +137,19 @@ void setupUI() {
           polyscope::removeStructure(dragPath->name);
           dragPath = nullptr;
         }
+        updateSampleRate();
       } else {
         std::cout << "[Info] Switched to on-demand ARAP solving\n";
       }
+    }
+    
+    // Sample rate controls (only show in real-time mode)
+    if (realTimeSolving) {
+      ImGui::Separator();
+      ImGui::Text("Performance Stats:");
+      ImGui::Text("Sample Rate: %.1f fps", currentSampleRate);
+      ImGui::Text("Solve Time: %.1f ms", avgSolveTime * 1000.0f);
+      ImGui::Text("Target: %.0f fps", 1.0f / targetFrameTime);
     }
     
     // ARAP solve button (disabled in real-time mode)
@@ -145,8 +167,6 @@ void setupUI() {
     }
     if (realTimeSolving) {
       ImGui::EndDisabled();
-      ImGui::SameLine();
-      ImGui::Text("(disabled in real-time mode)");
     }
   }
 
@@ -257,7 +277,7 @@ void vertexPickerCallback() {
     // sample drag
     if (isDragging && ImGui::IsMouseDown(0) && draggedVertexIndex >= 0) {
       double dt = std::chrono::duration<double>(now - lastSampleTime).count();
-      if (dt >= sampleInterval && inside) {
+      if (dt >= currentSampleInterval && inside) {
         auto wp = Solver::screenToWorld(mpos, dragPlanePoint, dragPlaneNormal);
         std::cout << "[Deform] drag vertex=" << draggedVertexIndex
                   << " screen=(" << mpos.x << "," << mpos.y
@@ -269,8 +289,21 @@ void vertexPickerCallback() {
           solver.updateVertex(draggedVertexIndex, wp);
           
           if (realTimeSolving) {
-            // Real-time mode: solve ARAP immediately
+            // Real-time mode: solve ARAP immediately and measure performance
+            auto solveStart = std::chrono::steady_clock::now();
             solver.solveARAP();
+            auto solveEnd = std::chrono::steady_clock::now();
+            
+            // Mock solve time variations for testing
+            float baseSolveTime = std::chrono::duration<float>(solveEnd - solveStart).count();
+            float randomVariation = 0.005f + (rand() % 100) * 0.0001f;  // 5-15ms variation
+            float mockSolveTime = baseSolveTime + randomVariation;
+            
+            // Update solve time average (exponential moving average)
+            avgSolveTime = 0.8f * avgSolveTime + 0.2f * mockSolveTime;
+            
+            // Update sample rate based on performance
+            updateSampleRate();
           }
           
           updateMeshVisualization();
