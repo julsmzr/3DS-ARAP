@@ -32,4 +32,8 @@ extern polyscope::PointCloud*     highlightPoints;
 extern bool                       deformationModeEnabled;
 extern polyscope::CameraParameters lockedCameraParams;
 
+// vertex dragging state
+extern int                        draggedVertexIndex;
+extern Eigen::MatrixXd           originalVertices;
+
 } // namespace Window
