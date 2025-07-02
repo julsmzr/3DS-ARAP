@@ -3,7 +3,9 @@
 
 #include <glm/glm.hpp>
 #include <Eigen/Dense>
+#include <Eigen/Sparse>
 #include <vector>
+#include <unordered_map>
 
 namespace Solver {
 
@@ -30,7 +32,7 @@ public:
     // Update a single vertex position (for interactive dragging)
     void updateVertex(int vertexIndex, const Eigen::Vector3d& newPosition);
     
-    // Perform ARAP deformation (to be implemented later)
+    // Perform ARAP deformation
     void solveARAP();
     
     // Check if mesh is loaded
@@ -43,6 +45,19 @@ private:
     // Constraint data for ARAP
     std::vector<int> constraintIndices_;
     std::vector<Eigen::Vector3d> constraintPositions_;
+    
+    // ARAP data structures
+    std::vector<std::vector<int>> neighbors_;
+    std::vector<std::unordered_map<int, float>> weights_;
+    bool weightsComputed_ = false;
+    
+    // ARAP implementation
+    void computeCotangentWeights();
+    Eigen::Matrix3f computeOptimalRotation(int i, const std::vector<Eigen::Vector3f>& p, 
+                                          const std::vector<Eigen::Vector3f>& p_prime);
+    void buildLaplacianAndRHS(const std::vector<Eigen::Vector3f>& p, 
+                             const std::vector<Eigen::Matrix3f>& R,
+                             Eigen::SparseMatrix<float>& L, Eigen::MatrixXf& b);
 };
 
 } // namespace Solver

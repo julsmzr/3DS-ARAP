@@ -94,15 +94,15 @@ void setupUI() {
   if (ImGui::Button("Select Mesh...")) ImGui::OpenPopup("Select Mesh");
   ImGui::SameLine();
   if (currentMesh) {
-    if (!deformationModeEnabled) {
-      if (ImGui::Button("Clear Selection")) clearSelection();
-      ImGui::SameLine();
-    } else {
-      ImGui::BeginDisabled();
-      ImGui::Button("Clear Selection");
-      ImGui::EndDisabled();
-      ImGui::SameLine();
+    if (ImGui::Button("Clear Selection")) {
+      clearSelection();
+      if (deformationModeEnabled) {
+        // If in deformation mode, exit it since all constraints are cleared
+        deformationModeEnabled = false;
+        std::cout << "[Info] Deformation mode DISABLED (constraints cleared)\n";
+      }
     }
+    ImGui::SameLine();
     const char* modeLabel = deformationModeEnabled
       ? "Disable Deformation Mode"
       : "Enable Deformation Mode";
@@ -283,9 +283,23 @@ void vertexPickerCallback() {
                   << ") world=(" << wp.x() << "," << wp.y() << "," << wp.z() << ")\n";
         lastSampleTime = now;
 
-        // Update the vertex position in solver and mesh
+        // Update constraint position for dragged vertex
         if (draggedVertexIndex >= 0 && solver.hasMesh()) {
-          solver.updateVertex(draggedVertexIndex, wp);
+          // Set the dragged vertex as a constraint
+          std::vector<int> constraintIndices = {draggedVertexIndex};
+          std::vector<Eigen::Vector3d> constraintPositions = {wp};
+          
+          // Add existing selected vertices as fixed constraints
+          for (size_t i = 0; i < selectedVertexIndices.size(); ++i) {
+            int idx = selectedVertexIndices[i];
+            if (idx != draggedVertexIndex) {
+              constraintIndices.push_back(idx);
+              constraintPositions.push_back(selectedPoints[i]);
+            }
+          }
+          
+          // Update the constraints
+          solver.setConstraints(constraintIndices, constraintPositions);
           
           if (realTimeSolving) {
             // Real-time mode: solve ARAP immediately and measure performance
@@ -293,7 +307,7 @@ void vertexPickerCallback() {
             solver.solveARAP();
             auto solveEnd = std::chrono::steady_clock::now();
             
-            // Mock solve time variations for testing
+            // Measure solve time
             float baseSolveTime = std::chrono::duration<float>(solveEnd - solveStart).count();
             float randomVariation = 0.005f + (rand() % 100) * 0.0001f;  // 5-15ms variation
             float mockSolveTime = baseSolveTime + randomVariation;
