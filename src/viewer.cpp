@@ -22,6 +22,7 @@ std::vector<int>              selectedVertexIndices;
 polyscope::PointCloud*        highlightPoints        = nullptr;
 bool                          deformationModeEnabled = false;
 polyscope::CameraParameters   lockedCameraParams;
+bool                          autoScalingDisabled    = false;
 Solver::ARAPSolver            solver;
 
 // vertex dragging state
@@ -53,6 +54,28 @@ static float                  avgSolveTime           = INITIAL_SOLVE_TIME;
 static double                 currentSampleInterval  = 1.0 / INITIAL_SAMPLE_RATE;
 static auto lastSampleTime = std::chrono::steady_clock::now();
 
+// Disable Polyscope's automatic view adjustments
+void disableAutoScaling() {
+  if (!autoScalingDisabled) {
+    // Disable auto-centering and scaling
+    polyscope::options::automaticallyComputeSceneExtents = false;
+    
+    autoScalingDisabled = true;
+    std::cout << "[View] Automatic view adjustments disabled\n";
+  }
+}
+
+// Restore Polyscope's automatic view adjustments
+void restoreAutoScaling() {
+  if (autoScalingDisabled) {
+    // Re-enable automatic centering and scaling
+    polyscope::options::automaticallyComputeSceneExtents = true;
+    
+    autoScalingDisabled = false;
+    std::cout << "[View] Automatic view adjustments restored\n";
+  }
+}
+
 static void resetPerformanceMetrics() {
     currentSampleRate = INITIAL_SAMPLE_RATE;
     avgSolveTime = INITIAL_SOLVE_TIME;
@@ -70,7 +93,15 @@ void updateSampleRate() {
 
 void updateMeshVisualization() {
     if (currentMesh && solver.hasMesh()) {
+        if (deformationModeEnabled) {
+            disableAutoScaling();
+        }
+        
         currentMesh->updateVertexPositions(solver.getVertices());
+        
+        if (deformationModeEnabled) {
+            polyscope::view::setViewToCamera(lockedCameraParams);
+        }
     }
 }
 
@@ -112,6 +143,7 @@ void setupUI() {
       if (deformationModeEnabled) {
         // If in deformation mode, exit it since all constraints are cleared
         deformationModeEnabled = false;
+        restoreAutoScaling();
         std::cout << "[Info] Deformation mode DISABLED (constraints cleared)\n";
       }
     }
@@ -123,11 +155,13 @@ void setupUI() {
       if (!deformationModeEnabled) {
         lockedCameraParams     = polyscope::view::getCameraParametersForCurrentView();
         deformationModeEnabled = true;
+        disableAutoScaling();
         updateConstraints();
         std::cout << "[Info] Deformation mode ENABLED\n";
       } else {
         deformationModeEnabled = false;
         isDragging            = false;
+        restoreAutoScaling();
         std::cout << "[Info] Deformation mode DISABLED\n";
       }
     }
@@ -250,7 +284,8 @@ void vertexPickerCallback() {
   auto now = std::chrono::steady_clock::now();
 
   if (deformationModeEnabled) {
-    // lock camera first
+    // Ensure auto-scaling is disabled and lock camera
+    disableAutoScaling();
     polyscope::view::setViewToCamera(lockedCameraParams);
 
     // if dragging and cursor left window: end drag
@@ -409,6 +444,7 @@ void Viewer::init() {
   
   polyscope::state::userCallback  = []() {
     if (deformationModeEnabled) {
+      disableAutoScaling();
       polyscope::view::setViewToCamera(lockedCameraParams);
     }
     setupUI();
