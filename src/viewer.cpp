@@ -149,7 +149,6 @@ void setupUI() {
       ImGui::Text("Performance Stats:");
       ImGui::Text("Sample Rate: %.1f fps", currentSampleRate);
       ImGui::Text("Solve Time: %.1f ms", avgSolveTime * 1000.0f);
-      ImGui::Text("Target: %.0f fps", 1.0f / targetFrameTime);
     }
     
     // ARAP solve button (disabled in real-time mode)
