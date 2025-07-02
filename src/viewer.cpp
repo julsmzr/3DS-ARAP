@@ -38,19 +38,32 @@ static glm::vec3                   dragPlaneNormal;
 static std::vector<Eigen::Vector3d> dragSamples;
 static polyscope::CurveNetwork*    dragPath       = nullptr;
 
-// sampling
-static float                  targetFrameTime        = 1.0f / 30.0f;  // Target 30fps
-static float                  currentSampleRate      = 60.0f;
-static float                  avgSolveTime           = 0.016f;  // Initial estimate: 16ms
-static double                 currentSampleInterval  = 1.0 / 60.0;
+// Sampling constants
+static constexpr float        TARGET_FPS             = 30.0f;
+static constexpr float        INITIAL_SAMPLE_RATE    = 60.0f;
+static constexpr float        INITIAL_SOLVE_TIME     = 0.016f;  // 16ms initial estimate
+static constexpr float        MIN_SAMPLE_RATE        = 1.0f;
+static constexpr float        MAX_SAMPLE_RATE        = 120.0f;
+static constexpr float        EMA_ALPHA              = 0.2f;    // Exponential moving average factor
+
+// Sampling state variables
+static float                  targetFrameTime        = 1.0f / TARGET_FPS;
+static float                  currentSampleRate      = INITIAL_SAMPLE_RATE;
+static float                  avgSolveTime           = INITIAL_SOLVE_TIME;
+static double                 currentSampleInterval  = 1.0 / INITIAL_SAMPLE_RATE;
 static auto lastSampleTime = std::chrono::steady_clock::now();
+
+static void resetPerformanceMetrics() {
+    currentSampleRate = INITIAL_SAMPLE_RATE;
+    avgSolveTime = INITIAL_SOLVE_TIME;
+    currentSampleInterval = 1.0 / INITIAL_SAMPLE_RATE;
+    lastSampleTime = std::chrono::steady_clock::now();
+}
 
 void updateSampleRate() {
     if (realTimeSolving) {
-        // Adaptive mode: adjust based on solve performance
-        float targetSampleRate = 30.0f;  // Base target
-        float adaptedRate = targetSampleRate * (targetFrameTime / avgSolveTime);
-        currentSampleRate = std::clamp(adaptedRate, 1.0f, 120.0f);
+        float adaptedRate = TARGET_FPS * (targetFrameTime / std::max(avgSolveTime, 0.001f));
+        currentSampleRate = std::clamp(adaptedRate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE);        
         currentSampleInterval = 1.0 / currentSampleRate;
     }
 }
@@ -140,6 +153,7 @@ void setupUI() {
         updateSampleRate();
       } else {
         std::cout << "[Info] Switched to on-demand ARAP solving\n";
+        resetPerformanceMetrics();
       }
     }
     
@@ -147,8 +161,8 @@ void setupUI() {
     if (realTimeSolving) {
       ImGui::Separator();
       ImGui::Text("Performance Stats:");
-      ImGui::Text("Sample Rate: %.1f fps", currentSampleRate);
-      ImGui::Text("Solve Time: %.1f ms", avgSolveTime * 1000.0f);
+      ImGui::Text("Current Sample Rate: %.1f fps", currentSampleRate);
+      ImGui::Text("Avg Solve Time: %.1f ms", avgSolveTime * 1000.0f);
     }
     
     // ARAP solve button (disabled in real-time mode)
@@ -307,15 +321,9 @@ void vertexPickerCallback() {
             solver.solveARAP();
             auto solveEnd = std::chrono::steady_clock::now();
             
-            // Measure solve time
-            float baseSolveTime = std::chrono::duration<float>(solveEnd - solveStart).count();
-            float randomVariation = 0.005f + (rand() % 100) * 0.0001f;  // 5-15ms variation
-            float mockSolveTime = baseSolveTime + randomVariation;
+            float currentSolveTime = std::chrono::duration<float>(solveEnd - solveStart).count();
+            avgSolveTime = (1.0f - EMA_ALPHA) * avgSolveTime + EMA_ALPHA * currentSolveTime;
             
-            // Update solve time average (exponential moving average)
-            avgSolveTime = 0.8f * avgSolveTime + 0.2f * mockSolveTime;
-            
-            // Update sample rate based on performance
             updateSampleRate();
           }
           
@@ -395,6 +403,10 @@ void Viewer::init() {
   polyscope::options::usePrefsFile = false;
   polyscope::options::programName = "Interactive ARAP Viewer";
   polyscope::options::verbosity   = 1;
+  
+  // Initialize performance metrics
+  resetPerformanceMetrics();
+  
   polyscope::state::userCallback  = []() {
     if (deformationModeEnabled) {
       polyscope::view::setViewToCamera(lockedCameraParams);
