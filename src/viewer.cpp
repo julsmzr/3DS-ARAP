@@ -12,11 +12,13 @@
 #include <chrono>
 #include <glm/glm.hpp>
 
+extern void interactive_arap();
+
 namespace fs = std::filesystem;
 namespace Window {
 
 // globals
-polyscope::SurfaceMesh*       currentMesh            = nullptr;
+std::unique_ptr<ActiveMesh> currentMesh              = nullptr;
 std::vector<Eigen::Vector3d>  selectedPoints;
 polyscope::PointCloud*        highlightPoints        = nullptr;
 bool                          deformationModeEnabled = false;
@@ -76,6 +78,9 @@ void setupUI() {
         std::cout << "[Info] Deformation mode DISABLED\n";
       }
     }
+    if (ImGui::Button("Run Interactive ARAP")) {
+      interactive_arap();
+    }
   }
 
   if (ImGui::BeginPopup("Select Mesh")) {
@@ -90,7 +95,9 @@ void setupUI() {
             deformationModeEnabled = false;
             auto M = MeshLoader::loadPLY(e.path().string());
             if (M.isValid()) {
-              currentMesh = MeshLoader::displayMesh(M, e.path().stem().string());
+              currentMesh = std::make_unique<ActiveMesh>();
+              currentMesh->data = M;
+              currentMesh->view = MeshLoader::displayMesh(M, e.path().stem().string());
             }
             ImGui::CloseCurrentPopup();
           }
@@ -129,8 +136,8 @@ void vertexPickerCallback() {
     // start drag
     if (ImGui::IsMouseClicked(0) && !isDragging && inside) {
       auto pr = polyscope::pickAtScreenCoords(mpos);
-      if (pr.isHit && pr.structure == currentMesh) {
-        auto mpr = currentMesh->interpretPickResult(pr);
+      if (pr.isHit && pr.structure == currentMesh->view) {
+        auto mpr = currentMesh->view->interpretPickResult(pr);
         if (mpr.elementType == polyscope::MeshElement::VERTEX) {
           isDragging      = true;
           lastSampleTime  = now;
@@ -201,8 +208,8 @@ void vertexPickerCallback() {
   }
   if (ImGui::IsMouseClicked(0) && inside) {
     auto pr = polyscope::pickAtScreenCoords(mpos);
-    if (pr.isHit && pr.structure == currentMesh) {
-      auto mpr = currentMesh->interpretPickResult(pr);
+    if (pr.isHit && pr.structure == currentMesh->view) {
+      auto mpr = currentMesh->view->interpretPickResult(pr);
       if (mpr.elementType == polyscope::MeshElement::VERTEX) {
         std::cout << "pick: screen=("
                   << pr.screenCoords.x << "," << pr.screenCoords.y
