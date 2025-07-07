@@ -10,19 +10,13 @@
 #include "solver.h"
 
 namespace Window {
+  class Viewer {
+    public:
+      void init();
+      void show();
+  };
 
-class Viewer {
-public:
-  void init();
-  void show();
-};
-
-void startViewer();
-
-// UI + picking entrypoints
-void setupUI();
-void vertexPickerCallback();
-void clearSelection();
+  void startViewer();
 
 // globals
 extern polyscope::SurfaceMesh*    currentMesh;
