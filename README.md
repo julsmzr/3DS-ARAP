@@ -8,8 +8,8 @@
 ```bash
 rm -rf build
 mkdir -p build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release .. # optimized
-#cmake -DCMAKE_BUILD_TYPE=Release .. # for debugging
+# Optional: Release build for heavy optimization
+cmake -DCMAKE_BUILD_TYPE=Release .. 
 cmake --build .
 cd .. && ./build/main
 ```
