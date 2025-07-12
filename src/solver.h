@@ -6,6 +6,7 @@
 #include <Eigen/Sparse>
 #include <vector>
 #include <unordered_map>
+#include <set>
 
 namespace Solver {
 
@@ -47,7 +48,7 @@ private:
     std::vector<Eigen::Vector3d> constraintPositions_;
     
     // ARAP data structures
-    std::vector<std::vector<int>> neighbors_;
+    std::vector<std::set<int>> neighbors_;
     std::vector<std::unordered_map<int, float>> weights_;
     bool weightsComputed_ = false;
     
