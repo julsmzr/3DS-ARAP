@@ -44,4 +44,30 @@ set_property(TARGET main PROPERTY CXX_STANDARD 17)
 target_include_directories(main PRIVATE ${happly_SOURCE_DIR})
 
 # Link Polyscope and Eigen to the main executable
-target_link_libraries(main polyscope Eigen3::Eigen)
+target_link_libraries(main PRIVATE polyscope Eigen3::Eigen)
+
+# -------- Fetch GoogleTest --------
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG v1.17.0
+)
+FetchContent_MakeAvailable(googletest)
+
+option(BUILD_ARAP_TESTS "Build ARAP tests" ON)
+if(BUILD_ARAP_TESTS)
+    enable_testing()
+
+    add_executable(test_arap src/test_arap_solver.cpp src/load_mesh.cpp src/solver.cpp)
+    target_include_directories(test_arap PRIVATE ${happly_SOURCE_DIR})
+    target_link_libraries(test_arap
+        PRIVATE
+        polyscope
+        Eigen3::Eigen
+        gtest_main
+    )
+
+    include(GoogleTest)
+    gtest_discover_tests(test_arap)
+endif()

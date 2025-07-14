@@ -126,21 +126,15 @@ void ARAPSolver::computeCotangentWeights() {
         weights_[v0][v1] += cot2;
         weights_[v1][v0] += cot2;
 
-        // Add neighbors
-        neighbors_[v0].push_back(v1);
-        neighbors_[v0].push_back(v2);
-        neighbors_[v1].push_back(v0);
-        neighbors_[v1].push_back(v2);
-        neighbors_[v2].push_back(v0);
-        neighbors_[v2].push_back(v1);
-    }
+        // Add neighbors   
+        neighbors_[v0].insert(v1);
+        neighbors_[v0].insert(v2);
+        neighbors_[v1].insert(v0);
+        neighbors_[v1].insert(v2);
+        neighbors_[v2].insert(v0);
+        neighbors_[v2].insert(v1);
 
-    // Remove duplicate neighbor entries
-    for (auto& nbrs : neighbors_) {
-        std::sort(nbrs.begin(), nbrs.end());
-        nbrs.erase(std::unique(nbrs.begin(), nbrs.end()), nbrs.end());
-    }
-
+    }  
     weightsComputed_ = true;
 }
 
@@ -201,7 +195,8 @@ void ARAPSolver::buildLaplacianAndRHS(const std::vector<Eigen::Vector3f>& p,
     const int n = p.size();
     std::vector<Eigen::Triplet<float>> triplets;
     b = Eigen::MatrixXf::Zero(n, 3);
-
+    
+    #pragma omp parallel for
     for (int i = 0; i < n; ++i) {
         float weight_sum = 0.0f;
 
@@ -259,20 +254,11 @@ void ARAPSolver::solveARAP() {
     std::vector<Eigen::Matrix3f> R(n);
     const int iterations = 5;  // Increased iterations for better convergence
 
-    // Initialize rotations as identity matrices
-    for (int i = 0; i < n; ++i) {
-        R[i] = Eigen::Matrix3f::Identity();
-    }
-
     for (int iter = 0; iter < iterations; ++iter) {
         // Local step: compute optimal rotations
+        #pragma omp parallel for
         for (int i = 0; i < n; ++i) {
-            if (!neighbors_[i].empty()) {
-                R[i] = computeOptimalRotation(i, p, p_prime);
-            } else {
-                // Keep identity rotation for isolated vertices
-                R[i] = Eigen::Matrix3f::Identity();
-            }
+            R[i] = computeOptimalRotation(i, p, p_prime);
         }
 
         // Global step: solve linear system
@@ -297,6 +283,7 @@ void ARAPSolver::solveARAP() {
         // Solve system using LDLT solver
         Eigen::SimplicialLDLT<Eigen::SparseMatrix<float>> solver;
         solver.compute(L);
+        Eigen::MatrixXf p_prime_mat;
 
         if (solver.info() != Eigen::Success) {
             std::cerr << "[Solver] Factorization failed, trying alternative solver" << std::endl;
@@ -308,31 +295,29 @@ void ARAPSolver::solveARAP() {
                 return;
             }
             
-            Eigen::MatrixXf p_prime_mat = choleskySolver.solve(b);
+            p_prime_mat = choleskySolver.solve(b);
             if (choleskySolver.info() != Eigen::Success) {
                 std::cerr << "[Solver] Cholesky solve failed" << std::endl;
                 return;
             }
-            
-            // Update positions
-            for (int i = 0; i < n; ++i) {
-                p_prime[i] = p_prime_mat.row(i).transpose();
-            }
+
         } else {
-            Eigen::MatrixXf p_prime_mat = solver.solve(b);
+            p_prime_mat = solver.solve(b);
             if (solver.info() != Eigen::Success) {
                 std::cerr << "[Solver] LDLT solve failed" << std::endl;
                 return;
             }
-            
-            // Update positions
-            for (int i = 0; i < n; ++i) {
-                p_prime[i] = p_prime_mat.row(i).transpose();
-            }
+        }
+
+        // Update positions
+        #pragma omp parallel for
+        for (int i = 0; i < n; ++i) {
+            p_prime[i] = p_prime_mat.row(i).transpose();
         }
     }
 
     // Update mesh vertices with deformed positions
+    #pragma omp parallel for
     for (int i = 0; i < n; ++i) {
         vertices_.row(i) = p_prime[i].cast<double>();
     }
