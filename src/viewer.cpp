@@ -10,6 +10,9 @@
 #include <filesystem>
 #include <iostream>
 #include <chrono>
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include <glm/glm.hpp>
 
 namespace fs = std::filesystem;
@@ -30,6 +33,17 @@ int                           draggedVertexIndex     = -1;
 
 // ARAP solving mode
 static bool                   realTimeSolving        = false;
+
+// animation mode state
+bool                          animationModeEnabled   = false;
+std::vector<Eigen::MatrixXd>  precomputedMeshes;
+std::atomic<bool>             isPrecomputing{false};
+std::atomic<int>              precomputationProgress{0};
+std::atomic<bool>             precomputationComplete{false};
+bool                          isPlaying              = false;
+int                           currentFrame            = 0;
+std::thread                   precomputationThread;
+std::mutex                    meshDataMutex;
 
 // drag‐state
 static bool                        isDragging     = false;
@@ -53,6 +67,14 @@ static float                  currentSampleRate      = INITIAL_SAMPLE_RATE;
 static float                  avgSolveTime           = INITIAL_SOLVE_TIME;
 static double                 currentSampleInterval  = 1.0 / INITIAL_SAMPLE_RATE;
 static auto lastSampleTime = std::chrono::steady_clock::now();
+
+// Forward declarations
+void precomputeAnimation(const std::vector<Eigen::Vector3d>& pathSamples, 
+                        int draggedVertex, 
+                        const std::vector<int>& fixedIndices,
+                        const std::vector<Eigen::Vector3d>& fixedPositions);
+void playAnimation();
+void cleanupAnimation();
 
 // Disable Polyscope's automatic view adjustments
 void disableAutoScaling() {
@@ -126,6 +148,23 @@ void clearSelection() {
   }
   draggedVertexIndex = -1;
   
+  // Clear animation state
+  if (animationModeEnabled) {
+    animationModeEnabled = false;
+    isPlaying = false;
+    currentFrame = 0;
+    if (precomputationThread.joinable()) {
+      isPrecomputing = false;
+      precomputationThread.join();
+    }
+    {
+      std::lock_guard<std::mutex> lock(meshDataMutex);
+      precomputedMeshes.clear();
+    }
+    precomputationComplete = false;
+    precomputationProgress = 0;
+  }
+  
   // Clear solver constraints
   if (solver.hasMesh()) {
     solver.setConstraints({}, {});
@@ -175,7 +214,10 @@ void setupUI() {
     ImGui::Text("Faces: %d", (int)solver.getFaces().rows());
     ImGui::Text("Selected: %d vertices", (int)selectedVertexIndices.size());
     
-    // Toggle between real-time and on-demand solving
+    // Toggle between real-time and on-demand solving (disabled in animation mode)
+    if (animationModeEnabled) {
+      ImGui::BeginDisabled();
+    }
     if (ImGui::Checkbox("Real-time Solving", &realTimeSolving)) {
       if (realTimeSolving) {
         std::cout << "[Info] Switched to real-time ARAP solving\n";
@@ -190,6 +232,41 @@ void setupUI() {
         resetPerformanceMetrics();
       }
     }
+    if (animationModeEnabled) {
+      ImGui::EndDisabled();
+    }
+    
+    // Animation mode toggle (only available when real-time solving is disabled)
+    if (realTimeSolving) {
+      ImGui::BeginDisabled();
+    }
+    if (ImGui::Checkbox("Animation Mode", &animationModeEnabled)) {
+      if (animationModeEnabled) {
+        std::cout << "[Info] Animation mode ENABLED\n";
+        isPlaying = false;
+        currentFrame = 0;
+        precomputationComplete = false;
+        precomputationProgress = 0;
+      } else {
+        std::cout << "[Info] Animation mode DISABLED\n";
+        isPlaying = false;
+        currentFrame = 0;
+        // Stop precomputation if running
+        if (precomputationThread.joinable()) {
+          isPrecomputing = false;
+          precomputationThread.join();
+        }
+        {
+          std::lock_guard<std::mutex> lock(meshDataMutex);
+          precomputedMeshes.clear();
+        }
+        precomputationComplete = false;
+        precomputationProgress = 0;
+      }
+    }
+    if (realTimeSolving) {
+      ImGui::EndDisabled();
+    }
     
     // Sample rate controls (only show in real-time mode)
     if (realTimeSolving) {
@@ -199,8 +276,50 @@ void setupUI() {
       ImGui::Text("Avg Solve Time: %.1f ms", avgSolveTime * 1000.0f);
     }
     
-    // ARAP solve button (disabled in real-time mode)
-    if (realTimeSolving) {
+    // Animation mode controls
+    if (animationModeEnabled) {
+      ImGui::Separator();
+      ImGui::Text("Animation Mode:");
+      
+      if (isPrecomputing) {
+        // Show loading progress
+        ImGui::Text("Precomputing frames...");
+        float progress = static_cast<float>(precomputationProgress.load()) / 50.0f;
+        ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), 
+                          (std::to_string(precomputationProgress.load()) + "/50").c_str());
+        
+        if (ImGui::Button("Cancel Precomputation")) {
+          isPrecomputing = false;
+          if (precomputationThread.joinable()) {
+            precomputationThread.join();
+          }
+        }
+      } else if (precomputationComplete) {
+        // Show play controls
+        ImGui::Text("Animation ready (%d frames)", static_cast<int>(precomputedMeshes.size()));
+        
+        if (!isPlaying) {
+          if (ImGui::Button("Play Animation")) {
+            isPlaying = true;
+            currentFrame = 0;
+          }
+        } else {
+          if (ImGui::Button("Stop Animation")) {
+            isPlaying = false;
+            currentFrame = 0;
+            // Reset to original mesh
+            updateMeshVisualization();
+          }
+          ImGui::SameLine();
+          ImGui::Text("Frame: %d/%d", currentFrame, static_cast<int>(precomputedMeshes.size()));
+        }
+      } else {
+        ImGui::Text("Draw an edge in deformation mode to generate animation");
+      }
+    }
+    
+    // ARAP solve button (disabled in real-time mode and animation mode)
+    if (realTimeSolving || animationModeEnabled) {
       ImGui::BeginDisabled();
     }
     if (ImGui::Button("Solve ARAP")) {
@@ -212,7 +331,7 @@ void setupUI() {
         dragPath = nullptr;
       }
     }
-    if (realTimeSolving) {
+    if (realTimeSolving || animationModeEnabled) {
       ImGui::EndDisabled();
     }
   }
@@ -354,7 +473,7 @@ void vertexPickerCallback() {
           // Update the constraints
           solver.setConstraints(constraintIndices, constraintPositions);
           
-          if (realTimeSolving) {
+          if (realTimeSolving && !animationModeEnabled) {
             // Real-time mode: solve ARAP immediately and measure performance
             auto solveStart = std::chrono::steady_clock::now();
             solver.solveARAP();
@@ -371,7 +490,7 @@ void vertexPickerCallback() {
 
         dragSamples.push_back(wp);
         
-        // On-demand mode: show dragged path
+        // On-demand mode or animation mode: show dragged path
         if (!realTimeSolving) {
           if (dragPath) {
             polyscope::removeStructure(dragPath->name);
@@ -394,6 +513,36 @@ void vertexPickerCallback() {
     // end drag
     if (isDragging && !ImGui::IsMouseDown(0)) {
       isDragging = false;
+      
+      // In animation mode, start precomputation when drag ends
+      if (animationModeEnabled && !dragSamples.empty() && draggedVertexIndex >= 0) {
+        std::cout << "[Animation] Starting precomputation with " << dragSamples.size() << " samples" << std::endl;
+        
+        // Stop any existing precomputation
+        if (precomputationThread.joinable()) {
+          isPrecomputing = false;
+          precomputationThread.join();
+        }
+        
+        // Collect fixed constraints (selected vertices excluding the dragged one)
+        std::vector<int> fixedIndices;
+        std::vector<Eigen::Vector3d> fixedPositions;
+        for (size_t i = 0; i < selectedVertexIndices.size(); ++i) {
+          if (selectedVertexIndices[i] != draggedVertexIndex) {
+            fixedIndices.push_back(selectedVertexIndices[i]);
+            fixedPositions.push_back(selectedPoints[i]);
+          }
+        }
+        
+        // Start precomputation in background thread
+        precomputationThread = std::thread([dragSamples = dragSamples, 
+                                          draggedVertex = draggedVertexIndex,
+                                          fixedIndices = std::move(fixedIndices),
+                                          fixedPositions = std::move(fixedPositions)]() {
+          precomputeAnimation(dragSamples, draggedVertex, fixedIndices, fixedPositions);
+        });
+      }
+      
       draggedVertexIndex = -1;
       std::cout << "[Deform] end drag\n";
     }
@@ -435,6 +584,25 @@ void vertexPickerCallback() {
   }
 }
 
+void cleanupAnimation() {
+  // Stop precomputation if running
+  if (precomputationThread.joinable()) {
+    isPrecomputing = false;
+    precomputationThread.join();
+  }
+  
+  // Clear animation state
+  animationModeEnabled = false;
+  isPlaying = false;
+  currentFrame = 0;
+  {
+    std::lock_guard<std::mutex> lock(meshDataMutex);
+    precomputedMeshes.clear();
+  }
+  precomputationComplete = false;
+  precomputationProgress = 0;
+}
+
 void Viewer::init() {
   polyscope::init();
   polyscope::options::usePrefsFile = false;
@@ -449,6 +617,12 @@ void Viewer::init() {
       disableAutoScaling();
       polyscope::view::setViewToCamera(lockedCameraParams);
     }
+    
+    // Handle animation playback
+    if (animationModeEnabled && isPlaying) {
+      playAnimation();
+    }
+    
     setupUI();
     vertexPickerCallback();
   };
@@ -456,12 +630,118 @@ void Viewer::init() {
 
 void Viewer::show() {
   polyscope::show();
+  // Cleanup animation resources when viewer shuts down
+  cleanupAnimation();
 }
 
 void startViewer() {
   Viewer v;
   v.init();
   v.show();
+}
+
+// Precompute animation frames
+void precomputeAnimation(const std::vector<Eigen::Vector3d>& pathSamples, 
+                        int draggedVertex, 
+                        const std::vector<int>& fixedIndices,
+                        const std::vector<Eigen::Vector3d>& fixedPositions) {
+    if (pathSamples.size() < 2) return;
+    
+    const int numFrames = 50;  // Sample 50 times along the edge
+    isPrecomputing = true;
+    precomputationProgress = 0;
+    precomputationComplete = false;
+    
+    // Clear previous data
+    {
+        std::lock_guard<std::mutex> lock(meshDataMutex);
+        precomputedMeshes.clear();
+        precomputedMeshes.reserve(numFrames);
+    }
+    
+    // Create a copy of the solver for background computation
+    Solver::ARAPSolver backgroundSolver;
+    backgroundSolver.setMesh(solver.getVertices(), solver.getFaces());
+    
+    std::cout << "[Animation] Starting precomputation of " << numFrames << " frames..." << std::endl;
+    
+    for (int frame = 0; frame < numFrames && isPrecomputing; ++frame) {
+        // Interpolate along the path
+        float t = static_cast<float>(frame) / (numFrames - 1);
+        Eigen::Vector3d interpolatedPos;
+        
+        if (pathSamples.size() == 2) {
+            // Linear interpolation between start and end
+            interpolatedPos = (1.0f - t) * pathSamples[0] + t * pathSamples[1];
+        } else {
+            // Multi-segment interpolation
+            float segmentLength = static_cast<float>(pathSamples.size() - 1);
+            float scaledT = t * segmentLength;
+            int segmentIndex = std::min(static_cast<int>(scaledT), static_cast<int>(pathSamples.size()) - 2);
+            float localT = scaledT - segmentIndex;
+            
+            interpolatedPos = (1.0f - localT) * pathSamples[segmentIndex] + 
+                            localT * pathSamples[segmentIndex + 1];
+        }
+        
+        // Set up constraints for this frame
+        std::vector<int> constraintIndices = {draggedVertex};
+        std::vector<Eigen::Vector3d> constraintPositions = {interpolatedPos};
+        
+        // Add fixed constraints
+        for (size_t i = 0; i < fixedIndices.size(); ++i) {
+            constraintIndices.push_back(fixedIndices[i]);
+            constraintPositions.push_back(fixedPositions[i]);
+        }
+        
+        backgroundSolver.setConstraints(constraintIndices, constraintPositions);
+        backgroundSolver.solveARAP();
+        
+        // Store the result
+        {
+            std::lock_guard<std::mutex> lock(meshDataMutex);
+            precomputedMeshes.push_back(backgroundSolver.getVertices());
+        }
+        
+        precomputationProgress = frame + 1;
+        
+        // Small delay to prevent UI freezing
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    
+    if (isPrecomputing) {
+        precomputationComplete = true;
+        std::cout << "[Animation] Precomputation completed!" << std::endl;
+    } else {
+        std::cout << "[Animation] Precomputation cancelled." << std::endl;
+    }
+    
+    isPrecomputing = false;
+}
+
+void playAnimation() {
+    if (!precomputationComplete || precomputedMeshes.empty()) return;
+    
+    static auto lastFrameTime = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    auto elapsed = std::chrono::duration<float>(now - lastFrameTime).count();
+    
+    // Play at 30 FPS
+    const float frameInterval = 1.0f / 30.0f;
+    
+    if (elapsed >= frameInterval) {
+        std::lock_guard<std::mutex> lock(meshDataMutex);
+        
+        if (currentFrame < static_cast<int>(precomputedMeshes.size())) {
+            // Update mesh with current frame
+            currentMesh->updateVertexPositions(precomputedMeshes[currentFrame]);
+            currentFrame++;
+            lastFrameTime = now;
+        } else {
+            // Animation finished, loop back to start
+            currentFrame = 0;
+        }
+    }
 }
 
 } // namespace Window
