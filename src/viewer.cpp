@@ -339,7 +339,16 @@ void setupUI() {
   if (ImGui::BeginPopup("Select Mesh")) {
     const std::string dataDir = "Data";
     if (fs::is_directory(dataDir)) {
+
+      std::vector<fs::directory_entry> plyFiles;
       for (auto& e : fs::directory_iterator(dataDir)) {
+        if (e.path().extension() == ".ply") plyFiles.push_back(e);
+      }
+      std::sort(plyFiles.begin(), plyFiles.end(), [](const auto& a, const auto& b) {
+        return a.path().filename().string() < b.path().filename().string();
+      });
+      
+      for (auto& e : plyFiles) {
         if (e.path().extension() == ".ply") {
           auto fn = e.path().filename().string();
           if (ImGui::Selectable(fn.c_str())) {
