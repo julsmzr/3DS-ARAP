@@ -26,7 +26,17 @@ FetchContent_Declare(
    GIT_TAG        master
 )
 
-FetchContent_MakeAvailable(polyscope Eigen3)
+# Fetch ceres
+FetchContent_Declare(ceres
+  GIT_REPOSITORY  https://ceres-solver.googlesource.com/ceres-solver
+  GIT_TAG         2.2.0
+)
+
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+set(PROVIDE_UNINSTALL_TARGET OFF)
+set(MINIGLOG ON)
+
+FetchContent_MakeAvailable(polyscope Eigen3 ceres)
 
 # For happly, we need to handle it manually since it's header-only without a CMake config
 FetchContent_GetProperties(happly)
@@ -44,7 +54,7 @@ set_property(TARGET main PROPERTY CXX_STANDARD 17)
 target_include_directories(main PRIVATE ${happly_SOURCE_DIR})
 
 # Link Polyscope and Eigen to the main executable
-target_link_libraries(main PRIVATE polyscope Eigen3::Eigen)
+target_link_libraries(main PRIVATE polyscope Eigen3::Eigen ceres)
 
 # -------- Fetch GoogleTest --------
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
@@ -66,6 +76,7 @@ if(BUILD_ARAP_TESTS)
         polyscope
         Eigen3::Eigen
         gtest_main
+        ceres
     )
 
     include(GoogleTest)

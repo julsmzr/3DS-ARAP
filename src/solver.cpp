@@ -219,6 +219,14 @@ void ARAPSolver::buildLaplacianAndRHS(const std::vector<Eigen::Vector3f>& p,
 }
 
 void ARAPSolver::solveARAP() {
+    if (paperARAP) {
+        solveARAPPaper();
+    } else {
+        solveARAPCeres();
+    }
+}
+
+void ARAPSolver::solveARAPPaper() {
     if (!hasMesh()) {
         std::cout << "[Solver] No mesh loaded for ARAP solve" << std::endl;
         return;
@@ -252,7 +260,7 @@ void ARAPSolver::solveARAP() {
 
     // ARAP iterations (local-global alternation)
     std::vector<Eigen::Matrix3f> R(n);
-    const int iterations = 5;  // Increased iterations for better convergence
+    const int iterations = numberOfIterations;  // Increased iterations for better convergence
 
     for (int iter = 0; iter < iterations; ++iter) {
         // Local step: compute optimal rotations
@@ -323,6 +331,85 @@ void ARAPSolver::solveARAP() {
     }
 
     std::cout << "[Solver] ARAP solve completed (" << iterations << " iterations)" << std::endl;
+}
+void ARAPSolver::solveARAPCeres() {
+
+    const int n = vertices_.rows();
+    if (!hasMesh()) {
+        std::cout << "[Solver] No mesh loaded for ARAP solve" << std::endl;
+        return;
+    }
+    
+    // Skip if no constraints (nothing to deform)
+    if (constraintIndices_.empty()) {
+        std::cout << "[Solver] No constraints set for ARAP solve, skipping" << std::endl;
+        return;
+    }
+
+    // Compute weights if not done yet
+    if (!weightsComputed_) {
+        computeCotangentWeights();
+    }
+
+    ceres::Problem problem;
+
+    std::vector<std::array<double, 3>> p_prime(n), angle(n);
+    
+    for (auto& arr : angle) {
+        arr.fill(0.0);
+    }
+
+    
+    for(size_t i = 0; i < constraintIndices_.size(); ++i) {
+        //const Vector3d& targetPoint, const double weight
+        auto constraintFunction = CeresSolver::EqualityConstraint::create(constraintPositions_[i], 5.0);
+        problem.AddResidualBlock(constraintFunction, nullptr, (double*) &p_prime[constraintIndices_[i]]);
+    }
+    
+    for (int i = 0; i < n; ++i) {
+        Eigen::Vector3d p_i = vertices_.row(i).transpose();
+        p_prime[i][0] = p_i(0);
+        p_prime[i][1] = p_i(1);
+        p_prime[i][2] = p_i(2);
+
+        if (neighbors_[i].empty()) {
+            continue;
+        }
+    
+        for (int j : neighbors_[i]) {
+            
+            Eigen::Vector3d p_j = vertices_.row(j).transpose();
+            
+            auto constraintFunction = CeresSolver::EnergyCostFunction::create(p_i, p_j, 1.0);
+            problem.AddResidualBlock(constraintFunction, nullptr, (double*) &p_prime[i], (double*) &p_prime[j], (double*) &angle[i]);
+        }
+    }
+
+    ceres::Solver::Options options;
+	options.max_num_iterations = numberOfIterations;
+    
+	options.linear_solver_type = getSolverType();
+    options.minimizer_progress_to_stdout = false;
+
+    //options.max_num_iterations = 10000;
+    //options.function_tolerance = 0.05;
+    //options.gradient_tolerance = 1e-4 * options.function_tolerance;
+
+	ceres::Solver::Summary summary;
+    std::cout<<"Start solving" << std::endl;
+	ceres::Solve(options, &problem, &summary);
+    std::cout<<"End solving" << std::endl;
+    
+    std::cout << summary.BriefReport() << std::endl;
+
+    // Update mesh vertices with deformed positions
+    //#pragma omp parallel for
+    for (int i = 0; i < n; ++i) {
+        vertices_.row(i)(0) = p_prime[i][0];
+        vertices_.row(i)(1) = p_prime[i][1];
+        vertices_.row(i)(2) = p_prime[i][2];
+    }
+
 }
 
 } // namespace Solver

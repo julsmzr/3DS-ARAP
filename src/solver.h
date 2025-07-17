@@ -8,6 +8,8 @@
 #include <unordered_map>
 #include <set>
 
+#include "ceresSolver.h"
+
 namespace Solver {
 
 // Screen projection utility
@@ -15,6 +17,14 @@ Eigen::Vector3d screenToWorld(
     const glm::vec2&   screenCoords,
     const Eigen::Vector3d& planePoint,
     const glm::vec3&   planeNormal);
+
+
+enum SolverType {
+    CHOLESKY,
+    QR,
+    SPARSE_SCHUR,
+    CGNR
+};
 
 // ARAP Solver class to manage mesh data and deformation
 class ARAPSolver {
@@ -32,9 +42,39 @@ public:
     
     // Update a single vertex position (for interactive dragging)
     void updateVertex(int vertexIndex, const Eigen::Vector3d& newPosition);
+
+    void setNumberofIterations(int numIter) {
+        numberOfIterations = numIter;
+    }
+
+    void setAlgortihm(bool paperARAP_) {
+        paperARAP = paperARAP_;
+    }
+
+    ceres::LinearSolverType getSolverType () {
+        switch(solvertype) {
+            case CHOLESKY:
+                return ceres::LinearSolverType::SPARSE_NORMAL_CHOLESKY;
+            case QR:
+                return ceres::DENSE_QR; 
+            case SPARSE_SCHUR:
+                return ceres::LinearSolverType::SPARSE_SCHUR; 
+            case CGNR:
+                return ceres::LinearSolverType::CGNR;
+        }
+    }
+
+    void setSolverType(SolverType solverType_) {
+        solvertype = solverType_;
+    }
     
     // Perform ARAP deformation
     void solveARAP();
+
+    void solveARAPPaper();
+    
+    //Perform ARAP deformation using Ceres
+    void solveARAPCeres();
     
     // Check if mesh is loaded
     bool hasMesh() const { return vertices_.rows() > 0 && faces_.rows() > 0; }
@@ -48,9 +88,14 @@ private:
     std::vector<Eigen::Vector3d> constraintPositions_;
     
     // ARAP data structures
+    //std::vector<std::vector<int>> neighbors_;
     std::vector<std::set<int>> neighbors_;
     std::vector<std::unordered_map<int, float>> weights_;
     bool weightsComputed_ = false;
+
+    int numberOfIterations = 5;
+    bool paperARAP = false;
+    SolverType solvertype;
     
     // ARAP implementation
     void computeCotangentWeights();
