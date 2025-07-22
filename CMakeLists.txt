@@ -6,6 +6,10 @@ set(CMAKE_CXX_STANDARD 17)
 # Fetch Polyscope
 include(FetchContent)
 
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
 FetchContent_Declare(
    polyscope
    GIT_REPOSITORY https://github.com/nmwsharp/polyscope.git
@@ -32,17 +36,21 @@ FetchContent_Declare(ceres
   GIT_TAG         2.2.0
 )
 
+# Set Ceres options to avoid conflicts
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(GFLAGS_FOUND FALSE CACHE BOOL "" FORCE)
+
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY https://github.com/google/googletest.git
+  GIT_TAG v1.17.0
+)
+
 set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(PROVIDE_UNINSTALL_TARGET OFF)
 set(MINIGLOG ON)
 
-FetchContent_MakeAvailable(polyscope Eigen3 ceres)
-
-# For happly, we need to handle it manually since it's header-only without a CMake config
-FetchContent_GetProperties(happly)
-if(NOT happly_POPULATED)
-  FetchContent_Populate(happly)
-endif()
+FetchContent_MakeAvailable(polyscope Eigen3 ceres happly googletest)
 
 # Create main executable
 add_executable(main src/main.cpp src/viewer.cpp src/load_mesh.cpp src/solver.cpp)
@@ -56,14 +64,6 @@ target_include_directories(main PRIVATE ${happly_SOURCE_DIR})
 # Link Polyscope and Eigen to the main executable
 target_link_libraries(main PRIVATE polyscope Eigen3::Eigen ceres)
 
-# -------- Fetch GoogleTest --------
-set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
-FetchContent_Declare(
-  googletest
-  GIT_REPOSITORY https://github.com/google/googletest.git
-  GIT_TAG v1.17.0
-)
-FetchContent_MakeAvailable(googletest)
 
 option(BUILD_ARAP_TESTS "Build ARAP tests" ON)
 if(BUILD_ARAP_TESTS)
