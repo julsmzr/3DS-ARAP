@@ -94,7 +94,7 @@ private:
     bool weightsComputed_ = false;
 
     int numberOfIterations = 5;
-    bool paperARAP = false;
+    bool paperARAP = true;
     SolverType solvertype;
     
     // ARAP implementation

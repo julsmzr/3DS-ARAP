@@ -82,3 +82,15 @@ if(BUILD_ARAP_TESTS)
     include(GoogleTest)
     gtest_discover_tests(test_arap)
 endif()
+
+# benchmark executable 
+add_executable(benchmark src/benchmark.cpp src/viewer.cpp src/load_mesh.cpp src/solver.cpp)
+
+# Ensure proper C++ settings
+set_property(TARGET benchmark PROPERTY CXX_STANDARD 17)
+
+# Include happly directory
+target_include_directories(benchmark PRIVATE ${happly_SOURCE_DIR})
+
+# Link Polyscope, Eigen and Ceres to the benchmark executable
+target_link_libraries(benchmark PRIVATE polyscope Eigen3::Eigen ceres)
