@@ -2,6 +2,9 @@
 
 #include <string>
 #include <vector>
+#include <thread>
+#include <atomic>
+#include <mutex>
 #include <Eigen/Dense>
 #include <polyscope/polyscope.h>
 #include <polyscope/surface_mesh.h>
@@ -31,5 +34,16 @@ extern polyscope::CameraParameters lockedCameraParams;
 
 // vertex dragging state
 extern int                        draggedVertexIndex;
+
+// animation mode state
+extern bool                       animationModeEnabled;
+extern std::vector<Eigen::MatrixXd> precomputedMeshes;
+extern std::atomic<bool>          isPrecomputing;
+extern std::atomic<int>           precomputationProgress;
+extern std::atomic<bool>          precomputationComplete;
+extern bool                       isPlaying;
+extern int                        currentFrame;
+extern std::thread                precomputationThread;
+extern std::mutex                 meshDataMutex;
 
 } // namespace Window
