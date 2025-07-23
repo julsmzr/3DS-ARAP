@@ -52,6 +52,9 @@ int                           selectedCeresSolver = 0;         // 0=Cholesky, 1=
 int                           selectedPaperSolver = 0;         // 0=Cholesky, 1=LDLT
 int                           iterations = 5;                  // Number of ARAP iterations
 
+// Status message
+std::string                   statusMessage = "Ready";
+
 // drag‐state
 static bool                        isDragging     = false;
 static glm::vec2                   dragStartScreen;
@@ -178,6 +181,7 @@ void clearSelection() {
     solver.setConstraints({}, {});
   }
   
+  statusMessage = "Selection cleared";
   std::cout << "[Info] Selection cleared\n";
 }
 
@@ -230,215 +234,248 @@ void loadMesh(const std::string& meshPath) {
     solver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
     solver.setNumberofIterations(iterations);
     
+    statusMessage = "Mesh loaded: " + path.filename().string() + " (" + 
+                   std::to_string(vertices.rows()) + " vertices, " + 
+                   std::to_string(faces.rows()) + " faces)";
     std::cout << "[Info] Mesh loaded: " << path.filename().string() << std::endl;
   } else {
+    statusMessage = "Failed to load mesh: " + fs::path(meshPath).filename().string();
     std::cout << "[Error] Failed to load mesh: " << meshPath << std::endl;
   }
 }
 
 void setupUI() {
+  // =================================
+  // MESH SELECTION GROUP
+  // =================================
+  ImGui::Text("Mesh Selection");
+  ImGui::Separator();
   if (ImGui::Button("Select Mesh...")) ImGui::OpenPopup("Select Mesh");
+  
   ImGui::SameLine();
   if (currentMesh && !currentMeshPath.empty()) {
     if (ImGui::Button("Reset Mesh")) {
       loadMesh(currentMeshPath);
+      statusMessage = "Mesh reset to original state";
     }
-    ImGui::SameLine();
   }
+
+  // =================================
+  // ARAP CONFIGURATION GROUP
+  // =================================
   if (currentMesh) {
+    ImGui::Text("ARAP Configuration");
+    ImGui::Separator();
     if (ImGui::Button("Clear Selection")) {
       clearSelection();
       if (deformationModeEnabled) {
         // If in deformation mode, exit it since all constraints are cleared
         deformationModeEnabled = false;
         restoreAutoScaling();
-        std::cout << "[Info] Deformation mode DISABLED (constraints cleared)\n";
-      }
-    }
-    ImGui::SameLine();
-    const char* modeLabel = deformationModeEnabled
-      ? "Disable Deformation Mode"
-      : "Enable Deformation Mode";
-    if (ImGui::Button(modeLabel)) {
-      if (!deformationModeEnabled) {
-        lockedCameraParams     = polyscope::view::getCameraParametersForCurrentView();
-        deformationModeEnabled = true;
-        disableAutoScaling();
-        updateConstraints();
-        std::cout << "[Info] Deformation mode ENABLED\n";
+        statusMessage = "Deformation mode DISABLED (constraints cleared)";
       } else {
-        deformationModeEnabled = false;
-        isDragging            = false;
-        restoreAutoScaling();
-        std::cout << "[Info] Deformation mode DISABLED\n";
+        statusMessage = "Selection cleared";
       }
     }
-  }
 
-  // Show solver info
-  if (solver.hasMesh()) {
-    ImGui::Separator();
-    ImGui::Text("Solver Status:");
-    ImGui::Text("Vertices: %d", (int)solver.getVertices().rows());
-    ImGui::Text("Faces: %d", (int)solver.getFaces().rows());
-    ImGui::Text("Selected: %d vertices", (int)selectedVertexIndices.size());
-    
-    // Toggle between real-time and on-demand solving (disabled in animation mode)
-    if (animationModeEnabled) {
-      ImGui::BeginDisabled();
-    }
-    if (ImGui::Checkbox("Real-time Solving", &realTimeSolving)) {
+      ImGui::SameLine();
+            
+      const char* modeLabel = deformationModeEnabled
+        ? "Disable Deformation Mode"
+        : "Enable Deformation Mode";
+      if (ImGui::Button(modeLabel)) {
+        if (!deformationModeEnabled) {
+          lockedCameraParams     = polyscope::view::getCameraParametersForCurrentView();
+          deformationModeEnabled = true;
+          disableAutoScaling();
+          updateConstraints();
+          statusMessage = "Deformation mode ENABLED";
+        } else {
+          deformationModeEnabled = false;
+          isDragging            = false;
+          restoreAutoScaling();
+          statusMessage = "Deformation mode DISABLED";
+        }
+      }
+      
+      ImGui::Separator();
+      
+      // Real-time solving toggle (disabled in animation mode)
+      if (animationModeEnabled) {
+        ImGui::BeginDisabled();
+      }
+      if (ImGui::Checkbox("Real-time Solving", &realTimeSolving)) {
+        if (realTimeSolving) {
+          statusMessage = "Switched to real-time ARAP solving";
+          // Clear any dragged path when switching to real-time
+          if (dragPath) {
+            polyscope::removeStructure(dragPath->name);
+            dragPath = nullptr;
+          }
+          updateSampleRate();
+        } else {
+          statusMessage = "Switched to on-demand ARAP solving";
+          resetPerformanceMetrics();
+        }
+      }
+      if (animationModeEnabled) {
+        ImGui::EndDisabled();
+      }
+      
+      // Performance stats (only show in real-time mode)
       if (realTimeSolving) {
-        std::cout << "[Info] Switched to real-time ARAP solving\n";
-        // Clear any dragged path when switching to real-time
+        ImGui::Indent();
+        ImGui::Text("Current Sample Rate: %.1f fps", currentSampleRate);
+        ImGui::Text("Avg Solve Time: %.1f ms", avgSolveTime * 1000.0f);
+        ImGui::Unindent();
+      }
+      
+      // Animation mode toggle (only available when real-time solving is disabled)
+      if (realTimeSolving) {
+        ImGui::BeginDisabled();
+      }
+      if (ImGui::Checkbox("Animation Mode", &animationModeEnabled)) {
+        if (animationModeEnabled) {
+          statusMessage = "Animation mode ENABLED";
+          isPlaying = false;
+          currentFrame = 0;
+          precomputationComplete = false;
+          precomputationProgress = 0;
+        } else {
+          statusMessage = "Animation mode DISABLED";
+          isPlaying = false;
+          currentFrame = 0;
+          // Stop precomputation if running
+          if (precomputationThread.joinable()) {
+            isPrecomputing = false;
+            precomputationThread.join();
+          }
+          {
+            std::lock_guard<std::mutex> lock(meshDataMutex);
+            precomputedMeshes.clear();
+          }
+          precomputationComplete = false;
+          precomputationProgress = 0;
+        }
+      }
+      if (realTimeSolving) {
+        ImGui::EndDisabled();
+      }
+      
+      // Animation mode controls
+      if (animationModeEnabled) {
+        ImGui::Indent();
+        
+        if (isPrecomputing) {
+          // Show loading progress
+          ImGui::Text("Precomputing frames...");
+          float progress = static_cast<float>(precomputationProgress.load()) / 50.0f;
+          ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), 
+                            (std::to_string(precomputationProgress.load()) + "/50").c_str());
+          
+          if (ImGui::Button("Cancel Precomputation")) {
+            isPrecomputing = false;
+            if (precomputationThread.joinable()) {
+              precomputationThread.join();
+            }
+            statusMessage = "Animation precomputation cancelled";
+          }
+        } else if (precomputationComplete) {
+          // Show play controls
+          ImGui::Text("Animation ready (%d frames)", static_cast<int>(precomputedMeshes.size()));
+          
+          if (!isPlaying) {
+            if (ImGui::Button("Play Animation")) {
+              isPlaying = true;
+              currentFrame = 0;
+              statusMessage = "Playing animation";
+            }
+          } else {
+            if (ImGui::Button("Stop Animation")) {
+              isPlaying = false;
+              currentFrame = 0;
+              // Reset to original mesh
+              updateMeshVisualization();
+              statusMessage = "Animation stopped";
+            }
+            ImGui::SameLine();
+            ImGui::Text("Frame: %d/%d", currentFrame, static_cast<int>(precomputedMeshes.size()));
+          }
+        } else {
+          ImGui::Text("Draw an edge in deformation mode to generate animation");
+        }
+        
+        ImGui::Unindent();
+      }
+    }
+  
+
+  // =================================
+  // SOLVER CONFIGURATION GROUP
+  // =================================
+  if (solver.hasMesh()) {
+    ImGui::Text("Solver Configuration");
+    ImGui::Separator();
+    float dropdownWidth = 150.0f;
+      
+      const char* arapItems[] = { "Paper ARAP", "Ceres ARAP", "IGT ARAP" };
+      
+      ImGui::SetNextItemWidth(dropdownWidth);
+      if (ImGui::Combo("##ARAP", &selectedArapImplementation, arapItems, IM_ARRAYSIZE(arapItems))) {
+          solver.setArapImplementation(static_cast<Solver::ARAPImplementation>(selectedArapImplementation));
+          statusMessage = "ARAP implementation changed to " + std::string(arapItems[selectedArapImplementation]);
+      }
+      
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(dropdownWidth);
+
+      if (selectedArapImplementation == 1) { // Ceres ARAP
+          const char* ceresItems[] = { "Sparse Normal Cholesky", "Sparse Schur", "CGNR" };
+          if (ImGui::Combo("##Solver", &selectedCeresSolver, ceresItems, IM_ARRAYSIZE(ceresItems))) {
+              solver.setSolverType(static_cast<Solver::SolverType>(selectedCeresSolver));
+              statusMessage = "Ceres solver changed to " + std::string(ceresItems[selectedCeresSolver]);
+          }
+      } else { // Paper ARAP or IGT ARAP
+          const char* paperItems[] = { "Cholesky", "LDLT" };
+          if (ImGui::Combo("##Solver", &selectedPaperSolver, paperItems, IM_ARRAYSIZE(paperItems))) {
+              solver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
+              statusMessage = "Paper solver changed to " + std::string(paperItems[selectedPaperSolver]);
+          }
+      }    
+
+      ImGui::SameLine();
+      ImGui::SetNextItemWidth(dropdownWidth);
+
+      if (ImGui::SliderInt("##Iterations", &iterations, 1, 50, "Iter: %d")) {
+          solver.setNumberofIterations(iterations);
+          statusMessage = "Iterations set to " + std::to_string(iterations);
+      }
+
+      ImGui::NewLine();
+      if (realTimeSolving || animationModeEnabled) {
+        ImGui::BeginDisabled();
+      }
+      if (ImGui::Button("Solve ARAP")) {
+        solver.solveARAP();
+        updateMeshVisualization();
+        // Clear dragged path after solving
         if (dragPath) {
           polyscope::removeStructure(dragPath->name);
           dragPath = nullptr;
         }
-        updateSampleRate();
-      } else {
-        std::cout << "[Info] Switched to on-demand ARAP solving\n";
-        resetPerformanceMetrics();
+        statusMessage = "ARAP solved with " + std::to_string(iterations) + " iterations";
+      }
+      if (realTimeSolving || animationModeEnabled) {
+        ImGui::EndDisabled();
       }
     }
-    if (animationModeEnabled) {
-      ImGui::EndDisabled();
-    }
-    
-    // Animation mode toggle (only available when real-time solving is disabled)
-    if (realTimeSolving) {
-      ImGui::BeginDisabled();
-    }
-    if (ImGui::Checkbox("Animation Mode", &animationModeEnabled)) {
-      if (animationModeEnabled) {
-        std::cout << "[Info] Animation mode ENABLED\n";
-        isPlaying = false;
-        currentFrame = 0;
-        precomputationComplete = false;
-        precomputationProgress = 0;
-      } else {
-        std::cout << "[Info] Animation mode DISABLED\n";
-        isPlaying = false;
-        currentFrame = 0;
-        // Stop precomputation if running
-        if (precomputationThread.joinable()) {
-          isPrecomputing = false;
-          precomputationThread.join();
-        }
-        {
-          std::lock_guard<std::mutex> lock(meshDataMutex);
-          precomputedMeshes.clear();
-        }
-        precomputationComplete = false;
-        precomputationProgress = 0;
-      }
-    }
-    if (realTimeSolving) {
-      ImGui::EndDisabled();
-    }
-    
-    // Sample rate controls (only show in real-time mode)
-    if (realTimeSolving) {
-      ImGui::Separator();
-      ImGui::Text("Performance Stats:");
-      ImGui::Text("Current Sample Rate: %.1f fps", currentSampleRate);
-      ImGui::Text("Avg Solve Time: %.1f ms", avgSolveTime * 1000.0f);
-    }
-    
-    // Animation mode controls
-    if (animationModeEnabled) {
-      ImGui::Separator();
-      ImGui::Text("Animation Mode:");
-      
-      if (isPrecomputing) {
-        // Show loading progress
-        ImGui::Text("Precomputing frames...");
-        float progress = static_cast<float>(precomputationProgress.load()) / 50.0f;
-        ImGui::ProgressBar(progress, ImVec2(-1.0f, 0.0f), 
-                          (std::to_string(precomputationProgress.load()) + "/50").c_str());
-        
-        if (ImGui::Button("Cancel Precomputation")) {
-          isPrecomputing = false;
-          if (precomputationThread.joinable()) {
-            precomputationThread.join();
-          }
-        }
-      } else if (precomputationComplete) {
-        // Show play controls
-        ImGui::Text("Animation ready (%d frames)", static_cast<int>(precomputedMeshes.size()));
-        
-        if (!isPlaying) {
-          if (ImGui::Button("Play Animation")) {
-            isPlaying = true;
-            currentFrame = 0;
-          }
-        } else {
-          if (ImGui::Button("Stop Animation")) {
-            isPlaying = false;
-            currentFrame = 0;
-            // Reset to original mesh
-            updateMeshVisualization();
-          }
-          ImGui::SameLine();
-          ImGui::Text("Frame: %d/%d", currentFrame, static_cast<int>(precomputedMeshes.size()));
-        }
-      } else {
-        ImGui::Text("Draw an edge in deformation mode to generate animation");
-      }
-    }
-    
-    // Solver Configuration
-    ImGui::Separator();
-    ImGui::Text("Solver Configuration:");
-    
-    float dropdownWidth = 150.0f;
-    
-    const char* arapItems[] = { "Paper ARAP", "Ceres ARAP", "IGT ARAP" };
-    
-    ImGui::SetNextItemWidth(dropdownWidth);
-    if (ImGui::Combo("##ARAP", &selectedArapImplementation, arapItems, IM_ARRAYSIZE(arapItems))) {
-        solver.setArapImplementation(static_cast<Solver::ARAPImplementation>(selectedArapImplementation));
-    }
-    
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(dropdownWidth);
+  
 
-    if (selectedArapImplementation == 1) { // Ceres ARAP
-        const char* ceresItems[] = { "Sparse Normal Cholesky", "Sparse Schur", "CGNR" };
-        if (ImGui::Combo("##Solver", &selectedCeresSolver, ceresItems, IM_ARRAYSIZE(ceresItems))) {
-            solver.setSolverType(static_cast<Solver::SolverType>(selectedCeresSolver));
-        }
-    } else { // Paper ARAP or IGT ARAP
-        const char* paperItems[] = { "Cholesky", "LDLT" };
-        if (ImGui::Combo("##Solver", &selectedPaperSolver, paperItems, IM_ARRAYSIZE(paperItems))) {
-            solver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
-        }
-    }    
-
-    ImGui::SameLine();
-    ImGui::SetNextItemWidth(dropdownWidth);
-
-    if (ImGui::SliderInt("##Iterations", &iterations, 1, 50, "Iter: %d")) {
-        solver.setNumberofIterations(iterations);
-    }
-
-    ImGui::NewLine();
-    if (realTimeSolving || animationModeEnabled) {
-      ImGui::BeginDisabled();
-    }
-    if (ImGui::Button("Solve ARAP")) {
-      solver.solveARAP();
-      updateMeshVisualization();
-      // Clear dragged path after solving
-      if (dragPath) {
-        polyscope::removeStructure(dragPath->name);
-        dragPath = nullptr;
-      }
-    }
-    if (realTimeSolving || animationModeEnabled) {
-      ImGui::EndDisabled();
-    }
-  }
+  // =================================
+  // STATUS MESSAGE
+  // =================================
+  ImGui::Separator();
+  ImGui::Text("Status: %s", statusMessage.c_str());
 
   if (ImGui::BeginPopup("Select Mesh")) {
     const std::string dataDir = "Data";
@@ -457,6 +494,7 @@ void setupUI() {
           auto fn = e.path().filename().string();
           if (ImGui::Selectable(fn.c_str())) {
             loadMesh(e.path().string());
+            statusMessage = "Loaded mesh: " + fn;
             ImGui::CloseCurrentPopup();
           }
         }
