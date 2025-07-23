@@ -20,6 +20,7 @@ namespace Window {
 
 // globals
 polyscope::SurfaceMesh*       currentMesh            = nullptr;
+std::string                   currentMeshPath        = "";
 std::vector<Eigen::Vector3d>  selectedPoints;
 std::vector<int>              selectedVertexIndices;
 polyscope::PointCloud*        highlightPoints        = nullptr;
@@ -81,6 +82,7 @@ void precomputeAnimation(const std::vector<Eigen::Vector3d>& pathSamples,
                         const std::vector<Eigen::Vector3d>& fixedPositions);
 void playAnimation();
 void cleanupAnimation();
+void loadMesh(const std::string& meshPath);
 
 // Disable Polyscope's automatic view adjustments
 void disableAutoScaling() {
@@ -179,9 +181,70 @@ void clearSelection() {
   std::cout << "[Info] Selection cleared\n";
 }
 
+void loadMesh(const std::string& meshPath) {
+  polyscope::removeAllStructures();
+  clearSelection();
+
+  deformationModeEnabled = false;
+  restoreAutoScaling();
+  
+  auto M = MeshLoader::loadPLY(meshPath);
+  if (M.isValid()) {
+    fs::path path(meshPath);
+    currentMesh = MeshLoader::displayMesh(M, path.stem().string());
+    currentMeshPath = meshPath;
+    polyscope::view::resetCameraToHomeView();
+    
+    // Convert mesh data to Eigen format and pass to solver
+    Eigen::MatrixXd vertices(M.vertices.size(), 3);
+    for (size_t i = 0; i < M.vertices.size(); i++) {
+      vertices.row(i) = M.vertices[i];
+    }
+    
+    // Convert faces to Eigen format
+    std::vector<std::array<int,3>> triangles;
+    for (auto& f : M.faces) {
+      if (f.size() == 3) {
+        triangles.push_back({f[0], f[1], f[2]});
+      } else if (f.size() == 4) {
+        triangles.push_back({f[0], f[1], f[2]});
+        triangles.push_back({f[0], f[2], f[3]});
+      } else {
+        for (size_t i = 1; i + 1 < f.size(); i++) {
+          triangles.push_back({f[0], f[i], f[i+1]});
+        }
+      }
+    }
+    
+    Eigen::MatrixXi faces(triangles.size(), 3);
+    for (size_t i = 0; i < triangles.size(); i++) {
+      faces.row(i) = Eigen::Vector3i{triangles[i][0], triangles[i][1], triangles[i][2]};
+    }
+    
+    // Initialize solver with mesh data
+    solver.setMesh(vertices, faces);
+    
+    // Initialize solver settings based on UI state
+    solver.setArapImplementation(static_cast<Solver::ARAPImplementation>(selectedArapImplementation));
+    solver.setSolverType(static_cast<Solver::SolverType>(selectedCeresSolver));
+    solver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
+    solver.setNumberofIterations(iterations);
+    
+    std::cout << "[Info] Mesh loaded: " << path.filename().string() << std::endl;
+  } else {
+    std::cout << "[Error] Failed to load mesh: " << meshPath << std::endl;
+  }
+}
+
 void setupUI() {
   if (ImGui::Button("Select Mesh...")) ImGui::OpenPopup("Select Mesh");
   ImGui::SameLine();
+  if (currentMesh && !currentMeshPath.empty()) {
+    if (ImGui::Button("Reset Mesh")) {
+      loadMesh(currentMeshPath);
+    }
+    ImGui::SameLine();
+  }
   if (currentMesh) {
     if (ImGui::Button("Clear Selection")) {
       clearSelection();
@@ -393,52 +456,7 @@ void setupUI() {
         if (e.path().extension() == ".ply") {
           auto fn = e.path().filename().string();
           if (ImGui::Selectable(fn.c_str())) {
-            polyscope::removeAllStructures();
-            clearSelection();
-
-            deformationModeEnabled = false;
-            restoreAutoScaling();
-            
-            auto M = MeshLoader::loadPLY(e.path().string());
-            if (M.isValid()) {
-              currentMesh = MeshLoader::displayMesh(M, e.path().stem().string());
-              polyscope::view::resetCameraToHomeView();
-              
-              // Convert mesh data to Eigen format and pass to solver
-              Eigen::MatrixXd vertices(M.vertices.size(), 3);
-              for (size_t i = 0; i < M.vertices.size(); i++) {
-                vertices.row(i) = M.vertices[i];
-              }
-              
-              // Convert faces to Eigen format
-              std::vector<std::array<int,3>> triangles;
-              for (auto& f : M.faces) {
-                if (f.size() == 3) {
-                  triangles.push_back({f[0], f[1], f[2]});
-                } else if (f.size() == 4) {
-                  triangles.push_back({f[0], f[1], f[2]});
-                  triangles.push_back({f[0], f[2], f[3]});
-                } else {
-                  for (size_t i = 1; i + 1 < f.size(); i++) {
-                    triangles.push_back({f[0], f[i], f[i+1]});
-                  }
-                }
-              }
-              
-              Eigen::MatrixXi faces(triangles.size(), 3);
-              for (size_t i = 0; i < triangles.size(); i++) {
-                faces.row(i) = Eigen::Vector3i{triangles[i][0], triangles[i][1], triangles[i][2]};
-              }
-              
-              // Initialize solver with mesh data
-              solver.setMesh(vertices, faces);
-              
-              // Initialize solver settings based on UI state
-              solver.setArapImplementation(static_cast<Solver::ARAPImplementation>(selectedArapImplementation));
-              solver.setSolverType(static_cast<Solver::SolverType>(selectedCeresSolver));
-              solver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
-              solver.setNumberofIterations(iterations);
-            }
+            loadMesh(e.path().string());
             ImGui::CloseCurrentPopup();
           }
         }
