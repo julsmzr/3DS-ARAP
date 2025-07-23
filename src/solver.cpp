@@ -219,10 +219,21 @@ void ARAPSolver::buildLaplacianAndRHS(const std::vector<Eigen::Vector3f>& p,
 }
 
 void ARAPSolver::solveARAP() {
-    if (paperARAP) {
-        solveARAPPaper();
-    } else {
-        solveARAPCeres();
+    switch (arapImplementation) {
+        case PAPER_ARAP:
+            solveARAPPaper();
+            break;
+        case CERES_ARAP:
+            solveARAPCeres();
+            break;
+        case IGT_ARAP:
+            // IGT implementation (mocked for now, calls paper ARAP) TODO
+            std::cout << "[Solver] Using IGT ARAP implementation (mocked - calling Paper ARAP)" << std::endl;
+            solveARAPPaper();
+            break;
+        default:
+            solveARAPPaper();
+            break;
     }
 }
 
@@ -288,28 +299,33 @@ void ARAPSolver::solveARAPPaper() {
             L.coeffRef(i, i) += 1e-8f;
         }
 
-        // Solve system using LDLT solver
-        Eigen::SimplicialLDLT<Eigen::SparseMatrix<float>> solver;
-        solver.compute(L);
+        // Solve system using selected solver type
         Eigen::MatrixXf p_prime_mat;
-
-        if (solver.info() != Eigen::Success) {
-            std::cerr << "[Solver] Factorization failed, trying alternative solver" << std::endl;
-            // Try with Cholesky solver as backup
-            Eigen::SimplicialCholesky<Eigen::SparseMatrix<float>> choleskySolver;
-            choleskySolver.compute(L);
-            if (choleskySolver.info() != Eigen::Success) {
-                std::cerr << "[Solver] All factorizations failed" << std::endl;
+        if (paperSolverType == PAPER_CHOLESKY) {
+            // Use Cholesky solver (as specified in ARAP paper)
+            Eigen::SimplicialCholesky<Eigen::SparseMatrix<float>> solver;
+            solver.compute(L);
+            
+            if (solver.info() != Eigen::Success) {
+                std::cerr << "[Solver] Cholesky factorization failed" << std::endl;
                 return;
             }
             
-            p_prime_mat = choleskySolver.solve(b);
-            if (choleskySolver.info() != Eigen::Success) {
+            p_prime_mat = solver.solve(b);
+            if (solver.info() != Eigen::Success) {
                 std::cerr << "[Solver] Cholesky solve failed" << std::endl;
                 return;
             }
-
         } else {
+            // Use LDLT solver
+            Eigen::SimplicialLDLT<Eigen::SparseMatrix<float>> solver;
+            solver.compute(L);
+            
+            if (solver.info() != Eigen::Success) {
+                std::cerr << "[Solver] LDLT factorization failed" << std::endl;
+                return;
+            }
+            
             p_prime_mat = solver.solve(b);
             if (solver.info() != Eigen::Success) {
                 std::cerr << "[Solver] LDLT solve failed" << std::endl;

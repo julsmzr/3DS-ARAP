@@ -24,9 +24,10 @@ double benchMarkSolver_us(const MeshLoader::Mesh& mesh,
     }
 
     solver.setMesh(vertices, faces);
-    solver.setAlgortihm(paperARAP);
+    solver.setArapImplementation(paperARAP ? Solver::PAPER_ARAP : Solver::CERES_ARAP);
     solver.setNumberofIterations(iterations);
-    solver.setSolverType(solverType);    
+    solver.setSolverType(solverType);
+    solver.setPaperSolverType(Solver::PAPER_CHOLESKY);  // Default to Cholesky for paper solver
     solver.setConstraints(constraintIndices, constraintPoints);
 
     auto startSampleTime = std::chrono::steady_clock::now();

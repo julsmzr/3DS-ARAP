@@ -45,6 +45,12 @@ int                           currentFrame            = 0;
 std::thread                   precomputationThread;
 std::mutex                    meshDataMutex;
 
+// UI state for solver configuration
+int                           selectedArapImplementation = 0;  // 0=Paper, 1=Ceres, 2=IGT
+int                           selectedCeresSolver = 0;         // 0=Cholesky, 1=Sparse Schur, 2=CGNR
+int                           selectedPaperSolver = 0;         // 0=Cholesky, 1=LDLT
+int                           iterations = 5;                  // Number of ARAP iterations
+
 // drag‐state
 static bool                        isDragging     = false;
 static glm::vec2                   dragStartScreen;
@@ -318,7 +324,42 @@ void setupUI() {
       }
     }
     
-    // ARAP solve button (disabled in real-time mode and animation mode)
+    // Solver Configuration
+    ImGui::Separator();
+    ImGui::Text("Solver Configuration:");
+    
+    float dropdownWidth = 150.0f;
+    
+    const char* arapItems[] = { "Paper ARAP", "Ceres ARAP", "IGT ARAP" };
+    
+    ImGui::SetNextItemWidth(dropdownWidth);
+    if (ImGui::Combo("##ARAP", &selectedArapImplementation, arapItems, IM_ARRAYSIZE(arapItems))) {
+        solver.setArapImplementation(static_cast<Solver::ARAPImplementation>(selectedArapImplementation));
+    }
+    
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dropdownWidth);
+
+    if (selectedArapImplementation == 1) { // Ceres ARAP
+        const char* ceresItems[] = { "Sparse Normal Cholesky", "Sparse Schur", "CGNR" };
+        if (ImGui::Combo("##Solver", &selectedCeresSolver, ceresItems, IM_ARRAYSIZE(ceresItems))) {
+            solver.setSolverType(static_cast<Solver::SolverType>(selectedCeresSolver));
+        }
+    } else { // Paper ARAP or IGT ARAP
+        const char* paperItems[] = { "Cholesky", "LDLT" };
+        if (ImGui::Combo("##Solver", &selectedPaperSolver, paperItems, IM_ARRAYSIZE(paperItems))) {
+            solver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
+        }
+    }    
+
+    ImGui::SameLine();
+    ImGui::SetNextItemWidth(dropdownWidth);
+
+    if (ImGui::SliderInt("##Iterations", &iterations, 1, 50, "Iter: %d")) {
+        solver.setNumberofIterations(iterations);
+    }
+
+    ImGui::NewLine();
     if (realTimeSolving || animationModeEnabled) {
       ImGui::BeginDisabled();
     }
@@ -391,6 +432,12 @@ void setupUI() {
               
               // Initialize solver with mesh data
               solver.setMesh(vertices, faces);
+              
+              // Initialize solver settings based on UI state
+              solver.setArapImplementation(static_cast<Solver::ARAPImplementation>(selectedArapImplementation));
+              solver.setSolverType(static_cast<Solver::SolverType>(selectedCeresSolver));
+              solver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
+              solver.setNumberofIterations(iterations);
             }
             ImGui::CloseCurrentPopup();
           }

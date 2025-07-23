@@ -46,4 +46,9 @@ extern int                        currentFrame;
 extern std::thread                precomputationThread;
 extern std::mutex                 meshDataMutex;
 
+// UI state for solver configuration
+extern int                        selectedArapImplementation;
+extern int                        selectedCeresSolver;
+extern int                        selectedPaperSolver;
+
 } // namespace Window
