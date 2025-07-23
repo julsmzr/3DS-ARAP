@@ -14,8 +14,8 @@
 #include <atomic>
 #include <mutex>
 #include <glm/glm.hpp>
-
-namespace fs = std::filesystem;
+#include <limits>
+#include <algorithm>
 namespace Window {
 
 // globals
@@ -45,6 +45,15 @@ bool                          isPlaying              = false;
 int                           currentFrame            = 0;
 std::thread                   precomputationThread;
 std::mutex                    meshDataMutex;
+
+// error visualization mode state
+bool                          errorVisualizationEnabled = false;
+Eigen::MatrixXd               igtSolutionVertices;
+std::vector<double>           vertexErrors;
+std::vector<double>           faceErrors;
+bool                          hasErrorData           = false;
+bool                          showIgtMesh            = false;
+polyscope::SurfaceMesh*       igtMesh                 = nullptr;
 
 // UI state for solver configuration
 int                           selectedArapImplementation = 0;  // 0=Paper, 1=Ceres, 2=IGT
@@ -86,6 +95,9 @@ void precomputeAnimation(const std::vector<Eigen::Vector3d>& pathSamples,
 void playAnimation();
 void cleanupAnimation();
 void loadMesh(const std::string& meshPath);
+void computeErrorVisualization();
+void clearErrorVisualization();
+glm::vec3 errorToColor(double error, double maxError);
 
 // Disable Polyscope's automatic view adjustments
 void disableAutoScaling() {
@@ -119,7 +131,7 @@ static void resetPerformanceMetrics() {
 void updateSampleRate() {
     if (realTimeSolving) {
         float adaptedRate = TARGET_FPS * (targetFrameTime / std::max(avgSolveTime, 0.001f));
-        currentSampleRate = std::clamp(adaptedRate, MIN_SAMPLE_RATE, MAX_SAMPLE_RATE);        
+        currentSampleRate = std::min(std::max(adaptedRate, MIN_SAMPLE_RATE), MAX_SAMPLE_RATE);
         currentSampleInterval = 1.0 / currentSampleRate;
     }
 }
@@ -176,6 +188,12 @@ void clearSelection() {
     precomputationProgress = 0;
   }
   
+  // Clear error visualization state
+  if (errorVisualizationEnabled) {
+    clearErrorVisualization();
+    errorVisualizationEnabled = false;
+  }
+  
   // Clear solver constraints
   if (solver.hasMesh()) {
     solver.setConstraints({}, {});
@@ -194,7 +212,7 @@ void loadMesh(const std::string& meshPath) {
   
   auto M = MeshLoader::loadPLY(meshPath);
   if (M.isValid()) {
-    fs::path path(meshPath);
+    std::filesystem::path path(meshPath);
     currentMesh = MeshLoader::displayMesh(M, path.stem().string());
     currentMeshPath = meshPath;
     polyscope::view::resetCameraToHomeView();
@@ -239,7 +257,7 @@ void loadMesh(const std::string& meshPath) {
                    std::to_string(faces.rows()) + " faces)";
     std::cout << "[Info] Mesh loaded: " << path.filename().string() << std::endl;
   } else {
-    statusMessage = "Failed to load mesh: " + fs::path(meshPath).filename().string();
+    statusMessage = "Failed to load mesh: " + std::filesystem::path(meshPath).filename().string();
     std::cout << "[Error] Failed to load mesh: " << meshPath << std::endl;
   }
 }
@@ -300,8 +318,8 @@ void setupUI() {
       
       ImGui::Separator();
       
-      // Real-time solving toggle (disabled in animation mode)
-      if (animationModeEnabled) {
+      // Real-time solving toggle (disabled in animation mode or error visualization mode)
+      if (animationModeEnabled || errorVisualizationEnabled) {
         ImGui::BeginDisabled();
       }
       if (ImGui::Checkbox("Real-time Solving", &realTimeSolving)) {
@@ -318,7 +336,7 @@ void setupUI() {
           resetPerformanceMetrics();
         }
       }
-      if (animationModeEnabled) {
+      if (animationModeEnabled || errorVisualizationEnabled) {
         ImGui::EndDisabled();
       }
       
@@ -330,8 +348,8 @@ void setupUI() {
         ImGui::Unindent();
       }
       
-      // Animation mode toggle (only available when real-time solving is disabled)
-      if (realTimeSolving) {
+      // Animation mode toggle (only available when real-time solving and error visualization are disabled)
+      if (realTimeSolving || errorVisualizationEnabled) {
         ImGui::BeginDisabled();
       }
       if (ImGui::Checkbox("Animation Mode", &animationModeEnabled)) {
@@ -341,6 +359,11 @@ void setupUI() {
           currentFrame = 0;
           precomputationComplete = false;
           precomputationProgress = 0;
+          // Disable error visualization when enabling animation mode
+          if (errorVisualizationEnabled) {
+            clearErrorVisualization();
+            errorVisualizationEnabled = false;
+          }
         } else {
           statusMessage = "Animation mode DISABLED";
           isPlaying = false;
@@ -358,7 +381,44 @@ void setupUI() {
           precomputationProgress = 0;
         }
       }
-      if (realTimeSolving) {
+      if (realTimeSolving || errorVisualizationEnabled) {
+        ImGui::EndDisabled();
+      }
+      
+      // Error Visualization Mode toggle (only available when animation mode and real-time solving are disabled)
+      if (animationModeEnabled || realTimeSolving) {
+        ImGui::BeginDisabled();
+      }
+      if (ImGui::Checkbox("Error Visualization Mode", &errorVisualizationEnabled)) {
+        if (errorVisualizationEnabled) {
+          statusMessage = "Error Visualization mode ENABLED";
+          // Disable animation mode when enabling error visualization
+          if (animationModeEnabled) {
+            animationModeEnabled = false;
+            isPlaying = false;
+            currentFrame = 0;
+            if (precomputationThread.joinable()) {
+              isPrecomputing = false;
+              precomputationThread.join();
+            }
+            {
+              std::lock_guard<std::mutex> lock(meshDataMutex);
+              precomputedMeshes.clear();
+            }
+            precomputationComplete = false;
+            precomputationProgress = 0;
+          }
+          // Disable real-time solving when enabling error visualization
+          if (realTimeSolving) {
+            realTimeSolving = false;
+            resetPerformanceMetrics();
+          }
+        } else {
+          statusMessage = "Error Visualization mode DISABLED";
+          clearErrorVisualization();
+        }
+      }
+      if (animationModeEnabled || realTimeSolving) {
         ImGui::EndDisabled();
       }
       
@@ -403,6 +463,35 @@ void setupUI() {
           }
         } else {
           ImGui::Text("Draw an edge in deformation mode to generate animation");
+        }
+        
+        ImGui::Unindent();
+      }
+      
+      // Error visualization mode controls
+      if (errorVisualizationEnabled) {
+        ImGui::Indent();
+        
+        if (hasErrorData) {
+          ImGui::Text("Error visualization active");
+          ImGui::Text("Selected solver vs IGT ARAP");
+          
+          if (ImGui::Checkbox("Show IGT Mesh", &showIgtMesh)) {
+            if (showIgtMesh && igtMesh) {
+              igtMesh->setEnabled(true);
+            } else if (igtMesh) {
+              igtMesh->setEnabled(false);
+            }
+            statusMessage = showIgtMesh ? "IGT mesh overlay enabled" : "IGT mesh overlay disabled";
+          }
+          
+          if (ImGui::Button("Clear Error Visualization")) {
+            clearErrorVisualization();
+            statusMessage = "Error visualization cleared";
+          }
+        } else {
+          ImGui::Text("Perform a deformation to see error comparison");
+          ImGui::Text("Selected solver will be compared against IGT ARAP");
         }
         
         ImGui::Unindent();
@@ -458,6 +547,12 @@ void setupUI() {
       if (ImGui::Button("Solve ARAP")) {
         solver.solveARAP();
         updateMeshVisualization();
+        
+        // Compute error visualization if enabled
+        if (errorVisualizationEnabled) {
+          computeErrorVisualization();
+        }
+        
         // Clear dragged path after solving
         if (dragPath) {
           polyscope::removeStructure(dragPath->name);
@@ -479,10 +574,10 @@ void setupUI() {
 
   if (ImGui::BeginPopup("Select Mesh")) {
     const std::string dataDir = "Data";
-    if (fs::is_directory(dataDir)) {
+    if (std::filesystem::is_directory(dataDir)) {
 
-      std::vector<fs::directory_entry> plyFiles;
-      for (auto& e : fs::directory_iterator(dataDir)) {
+      std::vector<std::filesystem::directory_entry> plyFiles;
+      for (auto& e : std::filesystem::directory_iterator(dataDir)) {
         if (e.path().extension() == ".ply") plyFiles.push_back(e);
       }
       std::sort(plyFiles.begin(), plyFiles.end(), [](const auto& a, const auto& b) {
@@ -595,6 +690,11 @@ void vertexPickerCallback() {
             avgSolveTime = (1.0f - EMA_ALPHA) * avgSolveTime + EMA_ALPHA * currentSolveTime;
             
             updateSampleRate();
+            
+            // Compute error visualization if enabled
+            if (errorVisualizationEnabled) {
+              computeErrorVisualization();
+            }
           }
           
           updateMeshVisualization();
@@ -854,6 +954,155 @@ void playAnimation() {
             currentFrame = 0;
         }
     }
+}
+
+// Convert error value to color (blue = low, green = medium, red = high)
+glm::vec3 errorToColor(double error, double maxError) {
+    if (maxError <= 0.0) return {0.0f, 0.0f, 1.0f}; // All blue if no error
+    
+    double normalizedError = error / maxError;
+    normalizedError = std::min(1.0, std::max(0.0, normalizedError)); // Clamp to [0,1]
+    
+    // Apply more aggressive scaling - use power function to emphasize differences
+    normalizedError = std::pow(normalizedError, 0.3); // Makes small values more visible
+    
+    if (normalizedError < 0.33) {
+        // Blue to cyan transition
+        float t = static_cast<float>(normalizedError * 3.0);
+        return {0.0f, t, 1.0f};
+    } else if (normalizedError < 0.66) {
+        // Cyan to green transition
+        float t = static_cast<float>((normalizedError - 0.33) * 3.0);
+        return {0.0f, 1.0f, 1.0f - t};
+    } else {
+        // Green to red transition
+        float t = static_cast<float>((normalizedError - 0.66) * 3.0);
+        return {t, 1.0f - t, 0.0f};
+    }
+}
+
+void computeErrorVisualization() {
+    if (!solver.hasMesh() || !currentMesh) return;
+    
+    std::cout << "[Error Viz] Computing error visualization..." << std::endl;
+    
+    // Store current solver state
+    auto originalImplementation = selectedArapImplementation;
+    auto originalCeresSolver = selectedCeresSolver;
+    auto originalPaperSolver = selectedPaperSolver;
+    auto originalIterations = iterations;
+    
+    // Get current solver solution (already computed)
+    Eigen::MatrixXd selectedSolverVertices = solver.getVertices();
+    
+    // Create a copy of the solver for IGT computation
+    Solver::ARAPSolver igtSolver;
+    igtSolver.setMesh(solver.getVertices(), solver.getFaces());
+    
+    // Configure IGT solver
+    igtSolver.setArapImplementation(Solver::ARAPImplementation(2)); // IGT ARAP
+    igtSolver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
+    igtSolver.setNumberofIterations(iterations);
+    
+    // Set the same constraints and solve with IGT
+    if (!selectedVertexIndices.empty() && !selectedPoints.empty()) {
+        igtSolver.setConstraints(selectedVertexIndices, selectedPoints);
+    }
+    igtSolver.solveARAP();
+    
+    // Get IGT solution
+    igtSolutionVertices = igtSolver.getVertices();
+    
+    // Compute vertex-wise errors
+    vertexErrors.clear();
+    vertexErrors.reserve(selectedSolverVertices.rows());
+    
+    double maxVertexError = 0.0;
+    double minVertexError = std::numeric_limits<double>::max();
+    double totalError = 0.0;
+    
+    for (int i = 0; i < selectedSolverVertices.rows(); ++i) {
+        Eigen::Vector3d diff = selectedSolverVertices.row(i) - igtSolutionVertices.row(i);
+        double error = diff.norm();
+        vertexErrors.push_back(error);
+        maxVertexError = std::max(maxVertexError, error);
+        minVertexError = std::min(minVertexError, error);
+        totalError += error;
+    }
+    
+    double avgError = totalError / selectedSolverVertices.rows();
+    
+    // If max error is very small, use a more aggressive threshold
+    if (maxVertexError < 1e-6) {
+        std::cout << "[Error Viz] Very small errors detected, using enhanced sensitivity" << std::endl;
+        // Use a percentile-based approach for very small errors
+        std::vector<double> sortedErrors = vertexErrors;
+        std::sort(sortedErrors.begin(), sortedErrors.end());
+        double p95 = sortedErrors[static_cast<size_t>(0.95 * sortedErrors.size())];
+        maxVertexError = std::max(p95, maxVertexError);
+    }
+    
+    std::cout << "[Error Viz] Error statistics - Min: " << minVertexError 
+              << ", Max: " << maxVertexError << ", Avg: " << avgError << std::endl;
+    
+    // Compute face-wise errors (average of vertex errors)
+    faceErrors.clear();
+    Eigen::MatrixXi faces = solver.getFaces();
+    faceErrors.reserve(faces.rows());
+    
+    double maxFaceError = 0.0;
+    for (int i = 0; i < faces.rows(); ++i) {
+        double faceError = (vertexErrors[faces(i, 0)] + 
+                           vertexErrors[faces(i, 1)] + 
+                           vertexErrors[faces(i, 2)]) / 3.0;
+        faceErrors.push_back(faceError);
+        maxFaceError = std::max(maxFaceError, faceError);
+    }
+    
+    // Apply color visualization to the main mesh
+    std::vector<glm::vec3> vertexColors(vertexErrors.size());
+    for (size_t i = 0; i < vertexErrors.size(); ++i) {
+        vertexColors[i] = errorToColor(vertexErrors[i], maxVertexError);
+    }
+    
+    currentMesh->addVertexColorQuantity("Error Visualization", vertexColors)->setEnabled(true);
+    
+    // Create IGT mesh overlay (translucent gray)
+    if (igtMesh) {
+        polyscope::removeStructure(igtMesh->name);
+    }
+    
+    igtMesh = polyscope::registerSurfaceMesh("IGT Solution", igtSolutionVertices, faces);
+    igtMesh->setSurfaceColor({0.5f, 0.5f, 0.5f}); // Gray color
+    igtMesh->setTransparency(0.3f); // Make it translucent
+    igtMesh->setEnabled(showIgtMesh); // Only show if toggle is enabled
+    
+    hasErrorData = true;
+    
+    std::cout << "[Error Viz] Error visualization completed. Max vertex error: " << maxVertexError << std::endl;
+    std::cout << "[Error Viz] Max face error: " << maxFaceError << std::endl;
+}
+
+void clearErrorVisualization() {
+    if (currentMesh && hasErrorData) {
+        // Remove error visualization from main mesh
+        currentMesh->removeQuantity("Error Visualization");
+    }
+    
+    // Remove IGT mesh
+    if (igtMesh) {
+        polyscope::removeStructure(igtMesh->name);
+        igtMesh = nullptr;
+    }
+    
+    // Clear error data
+    vertexErrors.clear();
+    faceErrors.clear();
+    igtSolutionVertices.resize(0, 0);
+    hasErrorData = false;
+    showIgtMesh = false;
+    
+    std::cout << "[Error Viz] Error visualization cleared" << std::endl;
 }
 
 } // namespace Window
