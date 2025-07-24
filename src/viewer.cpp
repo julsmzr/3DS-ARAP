@@ -48,15 +48,15 @@ std::mutex                    meshDataMutex;
 
 // error visualization mode state
 bool                          errorVisualizationEnabled = false;
-Eigen::MatrixXd               igtSolutionVertices;
+Eigen::MatrixXd               iglSolutionVertices;
 std::vector<double>           vertexErrors;
 std::vector<double>           faceErrors;
 bool                          hasErrorData           = false;
-bool                          showIgtMesh            = false;
-polyscope::SurfaceMesh*       igtMesh                 = nullptr;
+bool                          showIglMesh            = false;
+polyscope::SurfaceMesh*       iglMesh                 = nullptr;
 
 // UI state for solver configuration
-int                           selectedArapImplementation = 0;  // 0=Paper, 1=Ceres, 2=IGT
+int                           selectedArapImplementation = 0;  // 0=Paper, 1=Ceres, 2=IGL
 int                           selectedCeresSolver = 0;         // 0=Cholesky, 1=Sparse Schur, 2=CGNR
 int                           selectedPaperSolver = 0;         // 0=Cholesky, 1=LDLT
 int                           iterations = 5;                  // Number of ARAP iterations
@@ -474,15 +474,15 @@ void setupUI() {
         
         if (hasErrorData) {
           ImGui::Text("Error visualization active");
-          ImGui::Text("Selected solver vs IGT ARAP");
-          
-          if (ImGui::Checkbox("Show IGT Mesh", &showIgtMesh)) {
-            if (showIgtMesh && igtMesh) {
-              igtMesh->setEnabled(true);
-            } else if (igtMesh) {
-              igtMesh->setEnabled(false);
+          ImGui::Text("Selected solver vs IGL ARAP");
+
+          if (ImGui::Checkbox("Show IGL Mesh", &showIglMesh)) {
+            if (showIglMesh && iglMesh) {
+              iglMesh->setEnabled(true);
+            } else if (iglMesh) {
+              iglMesh->setEnabled(false);
             }
-            statusMessage = showIgtMesh ? "IGT mesh overlay enabled" : "IGT mesh overlay disabled";
+            statusMessage = showIglMesh ? "IGL mesh overlay enabled" : "IGL mesh overlay disabled";
           }
           
           if (ImGui::Button("Clear Error Visualization")) {
@@ -491,7 +491,7 @@ void setupUI() {
           }
         } else {
           ImGui::Text("Perform a deformation to see error comparison");
-          ImGui::Text("Selected solver will be compared against IGT ARAP");
+          ImGui::Text("Selected solver will be compared against IGL ARAP");
         }
         
         ImGui::Unindent();
@@ -507,7 +507,7 @@ void setupUI() {
     ImGui::Separator();
     float dropdownWidth = 150.0f;
       
-      const char* arapItems[] = { "Paper ARAP", "Ceres ARAP", "IGT ARAP" };
+      const char* arapItems[] = { "Paper ARAP", "Ceres ARAP", "IGL ARAP" };
       
       ImGui::SetNextItemWidth(dropdownWidth);
       if (ImGui::Combo("##ARAP", &selectedArapImplementation, arapItems, IM_ARRAYSIZE(arapItems))) {
@@ -524,7 +524,7 @@ void setupUI() {
               solver.setSolverType(static_cast<Solver::SolverType>(selectedCeresSolver));
               statusMessage = "Ceres solver changed to " + std::string(ceresItems[selectedCeresSolver]);
           }
-      } else { // Paper ARAP or IGT ARAP
+      } else { // Paper ARAP or IGL ARAP
           const char* paperItems[] = { "Cholesky", "LDLT" };
           if (ImGui::Combo("##Solver", &selectedPaperSolver, paperItems, IM_ARRAYSIZE(paperItems))) {
               solver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
@@ -994,25 +994,25 @@ void computeErrorVisualization() {
     
     // Get current solver solution (already computed)
     Eigen::MatrixXd selectedSolverVertices = solver.getVertices();
-    
-    // Create a copy of the solver for IGT computation
-    Solver::ARAPSolver igtSolver;
-    igtSolver.setMesh(solver.getVertices(), solver.getFaces());
-    
-    // Configure IGT solver
-    igtSolver.setArapImplementation(Solver::ARAPImplementation(2)); // IGT ARAP
-    igtSolver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
-    igtSolver.setNumberofIterations(iterations);
-    
-    // Set the same constraints and solve with IGT
+
+    // Create a copy of the solver for IGL computation
+    Solver::ARAPSolver iglSolver;
+    iglSolver.setMesh(solver.getVertices(), solver.getFaces());
+
+    // Configure IGL solver
+    iglSolver.setArapImplementation(Solver::ARAPImplementation(2)); // IGL ARAP
+    iglSolver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
+    iglSolver.setNumberofIterations(iterations);
+
+    // Set the same constraints and solve with IGL
     if (!selectedVertexIndices.empty() && !selectedPoints.empty()) {
-        igtSolver.setConstraints(selectedVertexIndices, selectedPoints);
+        iglSolver.setConstraints(selectedVertexIndices, selectedPoints);
     }
-    igtSolver.solveARAP();
-    
-    // Get IGT solution
-    igtSolutionVertices = igtSolver.getVertices();
-    
+    iglSolver.solveARAP();
+
+    // Get IGL solution
+    iglSolutionVertices = iglSolver.getVertices();
+
     // Compute vertex-wise errors
     vertexErrors.clear();
     vertexErrors.reserve(selectedSolverVertices.rows());
@@ -1022,7 +1022,7 @@ void computeErrorVisualization() {
     double totalError = 0.0;
     
     for (int i = 0; i < selectedSolverVertices.rows(); ++i) {
-        Eigen::Vector3d diff = selectedSolverVertices.row(i) - igtSolutionVertices.row(i);
+        Eigen::Vector3d diff = selectedSolverVertices.row(i) - iglSolutionVertices.row(i);
         double error = diff.norm();
         vertexErrors.push_back(error);
         maxVertexError = std::max(maxVertexError, error);
@@ -1066,17 +1066,17 @@ void computeErrorVisualization() {
     }
     
     currentMesh->addVertexColorQuantity("Error Visualization", vertexColors)->setEnabled(true);
-    
-    // Create IGT mesh overlay (translucent gray)
-    if (igtMesh) {
-        polyscope::removeStructure(igtMesh->name);
+
+    // Create IGL mesh overlay (translucent gray)
+    if (iglMesh) {
+        polyscope::removeStructure(iglMesh->name);
     }
-    
-    igtMesh = polyscope::registerSurfaceMesh("IGT Solution", igtSolutionVertices, faces);
-    igtMesh->setSurfaceColor({0.5f, 0.5f, 0.5f}); // Gray color
-    igtMesh->setTransparency(0.3f); // Make it translucent
-    igtMesh->setEnabled(showIgtMesh); // Only show if toggle is enabled
-    
+
+    iglMesh = polyscope::registerSurfaceMesh("IGL Solution", iglSolutionVertices, faces);
+    iglMesh->setSurfaceColor({0.5f, 0.5f, 0.5f}); // Gray color
+    iglMesh->setTransparency(0.3f); // Make it translucent
+    iglMesh->setEnabled(showIglMesh); // Only show if toggle is enabled
+
     hasErrorData = true;
     
     std::cout << "[Error Viz] Error visualization completed. Max vertex error: " << maxVertexError << std::endl;
@@ -1089,19 +1089,19 @@ void clearErrorVisualization() {
         currentMesh->removeQuantity("Error Visualization");
     }
     
-    // Remove IGT mesh
-    if (igtMesh) {
-        polyscope::removeStructure(igtMesh->name);
-        igtMesh = nullptr;
+    // Remove IGL mesh
+    if (iglMesh) {
+        polyscope::removeStructure(iglMesh->name);
+        iglMesh = nullptr;
     }
     
     // Clear error data
     vertexErrors.clear();
     faceErrors.clear();
-    igtSolutionVertices.resize(0, 0);
+    iglSolutionVertices.resize(0, 0);
     hasErrorData = false;
-    showIgtMesh = false;
-    
+    showIglMesh = false;
+
     std::cout << "[Error Viz] Error visualization cleared" << std::endl;
 }
 

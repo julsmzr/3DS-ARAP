@@ -22,7 +22,7 @@ Eigen::Vector3d screenToWorld(
 enum ARAPImplementation {
     PAPER_ARAP,
     CERES_ARAP,
-    IGT_ARAP  // IGT implementation (mocked for now)
+    IGL_ARAP  // IGL implementation (mocked for now)
 };
 
 enum SolverType {

@@ -226,9 +226,9 @@ void ARAPSolver::solveARAP() {
         case CERES_ARAP:
             solveARAPCeres();
             break;
-        case IGT_ARAP:
-            // IGT implementation (mocked for now, calls paper ARAP) TODO
-            std::cout << "[Solver] Using IGT ARAP implementation (mocked - calling Paper ARAP)" << std::endl;
+        case IGL_ARAP:
+            // IGL implementation (mocked for now, calls paper ARAP) TODO
+            std::cout << "[Solver] Using IGL ARAP implementation (mocked - calling Paper ARAP)" << std::endl;
             solveARAPPaper();
             break;
         default:
