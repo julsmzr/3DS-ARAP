@@ -19,11 +19,21 @@ Eigen::Vector3d screenToWorld(
     const glm::vec3&   planeNormal);
 
 
+enum ARAPImplementation {
+    PAPER_ARAP,
+    CERES_ARAP,
+    IGL_ARAP  // IGL implementation (mocked for now)
+};
+
 enum SolverType {
     CHOLESKY,
-    QR,
     SPARSE_SCHUR,
     CGNR
+};
+
+enum PaperSolverType {
+    PAPER_CHOLESKY,
+    PAPER_LDLT
 };
 
 // ARAP Solver class to manage mesh data and deformation
@@ -47,20 +57,24 @@ public:
         numberOfIterations = numIter;
     }
 
-    void setAlgortihm(bool paperARAP_) {
-        paperARAP = paperARAP_;
+    void setArapImplementation(ARAPImplementation impl) {
+        arapImplementation = impl;
     }
 
-    ceres::LinearSolverType getSolverType () {
+    void setPaperSolverType(PaperSolverType paperSolver) {
+        paperSolverType = paperSolver;
+    }
+
+    ceres::LinearSolverType getSolverType() {
         switch(solvertype) {
             case CHOLESKY:
                 return ceres::LinearSolverType::SPARSE_NORMAL_CHOLESKY;
-            case QR:
-                return ceres::DENSE_QR; 
             case SPARSE_SCHUR:
                 return ceres::LinearSolverType::SPARSE_SCHUR; 
             case CGNR:
                 return ceres::LinearSolverType::CGNR;
+            default:
+                return ceres::LinearSolverType::SPARSE_NORMAL_CHOLESKY;
         }
     }
 
@@ -94,8 +108,9 @@ private:
     bool weightsComputed_ = false;
 
     int numberOfIterations = 5;
-    bool paperARAP = true;
-    SolverType solvertype;
+    ARAPImplementation arapImplementation = PAPER_ARAP;
+    SolverType solvertype = CHOLESKY;
+    PaperSolverType paperSolverType = PAPER_CHOLESKY;
     
     // ARAP implementation
     void computeCotangentWeights();
