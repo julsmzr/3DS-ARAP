@@ -89,6 +89,9 @@ public:
     
     //Perform ARAP deformation using Ceres
     void solveARAPCeres();
+
+    //Perform ARAP deformation using igl
+    void solveARAPIgl();
     
     // Check if mesh is loaded
     bool hasMesh() const { return vertices_.rows() > 0 && faces_.rows() > 0; }

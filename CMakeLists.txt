@@ -36,6 +36,12 @@ FetchContent_Declare(ceres
   GIT_TAG         2.2.0
 )
 
+# Fetch libgl
+FetchContent_Declare(ligigl
+  GIT_REPOSITORY  https://github.com/libigl/libigl.git
+  GIT_TAG         v2.6.0
+)
+
 # Set Ceres options to avoid conflicts
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(GFLAGS_FOUND FALSE CACHE BOOL "" FORCE)
@@ -50,7 +56,7 @@ set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
 set(PROVIDE_UNINSTALL_TARGET OFF)
 set(MINIGLOG ON)
 
-FetchContent_MakeAvailable(polyscope Eigen3 ceres happly googletest)
+FetchContent_MakeAvailable(polyscope Eigen3 ceres happly googletest ligigl)
 
 # Create main executable
 add_executable(main src/main.cpp src/viewer.cpp src/load_mesh.cpp src/solver.cpp)
@@ -62,7 +68,7 @@ set_property(TARGET main PROPERTY CXX_STANDARD 17)
 target_include_directories(main PRIVATE ${happly_SOURCE_DIR})
 
 # Link Polyscope and Eigen to the main executable
-target_link_libraries(main PRIVATE polyscope Eigen3::Eigen ceres)
+target_link_libraries(main PRIVATE polyscope Eigen3::Eigen ceres igl::core)
 
 
 option(BUILD_ARAP_TESTS "Build ARAP tests" ON)
@@ -77,6 +83,7 @@ if(BUILD_ARAP_TESTS)
         Eigen3::Eigen
         gtest_main
         ceres
+        igl::core
     )
 
     include(GoogleTest)
@@ -93,4 +100,4 @@ set_property(TARGET benchmark PROPERTY CXX_STANDARD 17)
 target_include_directories(benchmark PRIVATE ${happly_SOURCE_DIR})
 
 # Link Polyscope, Eigen and Ceres to the benchmark executable
-target_link_libraries(benchmark PRIVATE polyscope Eigen3::Eigen ceres)
+target_link_libraries(benchmark PRIVATE polyscope Eigen3::Eigen ceres igl::core)

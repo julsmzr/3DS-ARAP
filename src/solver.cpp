@@ -5,6 +5,7 @@
 #include <cmath>
 #include <iostream>
 #include <algorithm>
+#include <igl/arap.h>
 
 Eigen::Vector3d Solver::screenToWorld(
     const glm::vec2& screenCoords,
@@ -228,13 +229,36 @@ void ARAPSolver::solveARAP() {
             break;
         case IGL_ARAP:
             // IGL implementation (mocked for now, calls paper ARAP) TODO
-            std::cout << "[Solver] Using IGL ARAP implementation (mocked - calling Paper ARAP)" << std::endl;
-            solveARAPPaper();
+            solveARAPIgl();
             break;
         default:
             solveARAPPaper();
             break;
     }
+}
+
+void ARAPSolver::solveARAPIgl() {
+    std::cout << "[Solver] Using IGL ARAP implementation" << std::endl;
+    
+    size_t num_of_constraints = constraintIndices_.size();
+    Eigen::MatrixXd V = vertices_;
+    Eigen::MatrixXd U = V;
+    Eigen::MatrixXi F = faces_;
+    Eigen::VectorXi b(num_of_constraints);
+    Eigen::MatrixXd bc(num_of_constraints,3);
+    
+    for(int i = 0; i < num_of_constraints; i++) {
+        b(i) = constraintIndices_[i];
+        bc.row(i) = constraintPositions_[i];
+    }
+
+    igl::ARAPData arap_data;
+    arap_data.max_iter = numberOfIterations;
+
+    igl::arap_precomputation(V, F, V.cols(), b, arap_data);
+    igl::arap_solve(bc, arap_data, U);
+
+    vertices_ = U;
 }
 
 void ARAPSolver::solveARAPPaper() {
