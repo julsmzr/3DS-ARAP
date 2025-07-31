@@ -2,7 +2,7 @@
 
 ### Docker setup
 1. Create the docker image: `docker build -t interactive-arap .`
-2. Run the docker container: `docker run -it -v $(pwd):/workspace interactive-arap`
+2. Run the docker container: `docker run -it -v $(pwd):/workspace interactive-arap` (`docker run -it -v %cd%:/workspace interactive-arap` for Windows)
 
 ### CMake build 
 ```bash
