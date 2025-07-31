@@ -38,6 +38,46 @@ Mesh loadPLY(const std::string& filepath) {
   return mesh;
 }
 
+void writePLY(const std::string& filepath, const Mesh& mesh) {
+  try {
+    if (!mesh.isValid()) {
+      throw std::runtime_error("Mesh is not valid: missing vertices or faces");
+    }
+
+    happly::PLYData plyOut;
+
+    // Scale down vertices (inverse of loading)
+    const double SCALE = 1000.0;
+    std::vector<double> xs, ys, zs;
+    xs.reserve(mesh.vertices.size());
+    ys.reserve(mesh.vertices.size());
+    zs.reserve(mesh.vertices.size());
+
+    for (const auto& v : mesh.vertices) {
+      xs.push_back(v.x() / SCALE);
+      ys.push_back(v.y() / SCALE);
+      zs.push_back(v.z() / SCALE);
+    }
+
+    plyOut.addElement("vertex", mesh.vertices.size());
+    plyOut.getElement("vertex").addProperty<double>("x", xs);
+    plyOut.getElement("vertex").addProperty<double>("y", ys);
+    plyOut.getElement("vertex").addProperty<double>("z", zs);
+
+    // Faces
+    plyOut.addElement("face", mesh.faces.size());
+    plyOut.getElement("face").addListProperty<int>("vertex_indices", mesh.faces);
+
+    // Write to file
+    std::ofstream outFile(filepath, std::ios::binary);
+    plyOut.write(outFile, happly::DataFormat::Binary);
+    std::cout << "Saved mesh to " << filepath << "\n";
+
+  } catch (const std::exception& e) {
+    std::cerr << "PLY write error: " << e.what() << "\n";
+  }
+}
+
 polyscope::SurfaceMesh* displayMesh(const Mesh& mesh, const std::string& name) {
   if (!mesh.isValid()) {
     std::cerr << "Invalid mesh\n";

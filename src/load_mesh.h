@@ -14,6 +14,7 @@ namespace MeshLoader {
   };
 
   Mesh loadPLY(const std::string& filepath);
+ void writePLY(const std::string& filepath, const Mesh& mesh);
   polyscope::SurfaceMesh* displayMesh(const Mesh& mesh, const std::string& name);
 
 } // namespace MeshLoader

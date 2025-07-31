@@ -6,12 +6,13 @@ import re
 # List of CSV files to compare
 benchmark_files = [
     "arap_benchmark_PAPER_ARAP_CHOLESKY.csv",
-    "arap_benchmark_PROJECTED_ARAP_CHOLESKY.csv"
+    "arap_benchmark_CERES_ARAP_CHOLESKY.csv"
 ]
 
 # Base directory
-benchmark_dir = "benchmark_data"
-plot_dir = "plots"
+mesh_name = "cactus_highres"
+benchmark_dir = f"benchmark_data/{mesh_name}"
+plot_dir = f"plots/{mesh_name}"
 os.makedirs(plot_dir, exist_ok=True)
 
 # Helper to extract label from file name
@@ -58,7 +59,7 @@ for file in benchmark_files:
 
 plt.title("ARAP Solver Benchmark - Convergence (ΔV)")
 plt.xlabel("Iterations")
-plt.ylabel("Vertex Change Norm (ΔV)")
+plt.ylabel("Vertex Change RMSE (ΔV)")
 plt.grid(True)
 plt.legend()
 convergence_output = os.path.join(plot_dir, "arap_benchmark_convergence_plot.png")
@@ -77,9 +78,28 @@ for file in benchmark_files:
 
 plt.title("ARAP Solver Benchmark - Error to Target")
 plt.xlabel("Iterations")
-plt.ylabel("Target Error (L2 Norm)")
+plt.ylabel("Target Error (RMSE)")
 plt.grid(True)
 plt.legend()
 target_error_output = os.path.join(plot_dir, "arap_benchmark_target_error_plot.png")
 plt.savefig(target_error_output)
 print(f"Target error plot saved to {target_error_output}")
+
+
+plt.figure(figsize=(10, 6))
+for file in benchmark_files:
+    path = os.path.join(benchmark_dir, file)
+    if not os.path.exists(path):
+        continue
+    df = pd.read_csv(path)
+    label = extract_label(file)
+    plt.plot(df["Iterations"], df["EdgeLengthRelRMSError"], marker='x', label=label)
+
+plt.title("ARAP Solver Benchmark - Edge Length Relative RMSE")
+plt.xlabel("Iterations")
+plt.ylabel("Relative Edge RMSE")
+plt.grid(True)
+plt.legend()
+edge_error_output = os.path.join(plot_dir, "arap_benchmark_edge_rmse_plot.png")
+plt.savefig(edge_error_output)
+print(f"Edge length RMSE plot saved to {edge_error_output}")

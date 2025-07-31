@@ -14,3 +14,7 @@ Makefile
 # PolyScope files
 .polyscope.ini
 imgui.ini
+
+#Benchmarks outputs
+/benchmark_data/
+/plots/*/*.png

@@ -1002,7 +1002,7 @@ void computeErrorVisualization() {
     // Configure IGL solver
     iglSolver.setArapImplementation(Solver::ARAPImplementation(2)); // IGL ARAP
     iglSolver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
-    iglSolver.setNumberofIterations(iterations);
+    iglSolver.setNumberofIterations(100);
 
     // Set the same constraints and solve with IGL
     if (!selectedVertexIndices.empty() && !selectedPoints.empty()) {

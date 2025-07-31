@@ -83,6 +83,28 @@ void ARAPSolver::updateVertex(int vertexIndex, const Eigen::Vector3d& newPositio
     vertices_.row(vertexIndex) = newPosition.transpose();
 }
 
+void ARAPSolver::computeNeighbours() {
+    const int n = vertices_.rows();
+    neighbors_.clear();
+    neighbors_.resize(n);
+
+    // Process each face to build neighbors
+    for (int f = 0; f < faces_.rows(); ++f) {
+        int v0 = faces_(f, 0);
+        int v1 = faces_(f, 1);
+        int v2 = faces_(f, 2);
+
+        // Add neighbors   
+        neighbors_[v0].insert(v1);
+        neighbors_[v0].insert(v2);
+        neighbors_[v1].insert(v0);
+        neighbors_[v1].insert(v2);
+        neighbors_[v2].insert(v0);
+        neighbors_[v2].insert(v1);
+
+    }  
+}
+
 void ARAPSolver::computeCotangentWeights() {
     const int n = vertices_.rows();
     neighbors_.clear();
@@ -120,12 +142,12 @@ void ARAPSolver::computeCotangentWeights() {
         cot2 = std::max(cot2, 1e-6f);
 
         // Add cotangent weights (each edge gets contribution from opposite angle)
-        weights_[v1][v2] += cot0;
-        weights_[v2][v1] += cot0;
-        weights_[v0][v2] += cot1;
-        weights_[v2][v0] += cot1;
-        weights_[v0][v1] += cot2;
-        weights_[v1][v0] += cot2;
+        weights_[v1][v2] += cot0 / 2;
+        weights_[v2][v1] += cot0 / 2;
+        weights_[v0][v2] += cot1 / 2;
+        weights_[v2][v0] += cot1 / 2;
+        weights_[v0][v1] += cot2 / 2;
+        weights_[v1][v0] += cot2 / 2;
 
         // Add neighbors   
         neighbors_[v0].insert(v1);
@@ -254,7 +276,8 @@ void ARAPSolver::solveARAPIgl() {
 
     igl::ARAPData arap_data;
     arap_data.max_iter = numberOfIterations;
-
+    std::cout << "Vector b:\n" << b << "\n\n";
+    std::cout << "Matrix bc:\n" << bc << "\n";
     igl::arap_precomputation(V, F, V.cols(), b, arap_data);
     igl::arap_solve(bc, arap_data, U);
 
@@ -388,7 +411,7 @@ void ARAPSolver::solveARAPCeres() {
 
     // Compute weights if not done yet
     if (!weightsComputed_) {
-        computeCotangentWeights();
+        computeNeighbours();
     }
 
     ceres::Problem problem;
