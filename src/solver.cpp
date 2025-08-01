@@ -240,6 +240,17 @@ void ARAPSolver::solveARAP() {
 void ARAPSolver::solveARAPIgl() {
     std::cout << "[Solver] Using IGL ARAP implementation" << std::endl;
     
+    if (!hasMesh()) {
+        std::cout << "[Solver] No mesh loaded for ARAP solve" << std::endl;
+        return;
+    }
+    
+    // Skip if no constraints (nothing to deform)
+    if (constraintIndices_.empty()) {
+        std::cout << "[Solver] No constraints set for ARAP solve, skipping" << std::endl;
+        return;
+    }
+    
     size_t num_of_constraints = constraintIndices_.size();
     Eigen::MatrixXd V = vertices_;
     Eigen::MatrixXd U = V;
