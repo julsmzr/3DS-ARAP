@@ -116,6 +116,7 @@ private:
     PaperSolverType paperSolverType = PAPER_CHOLESKY;
     
     // ARAP implementation
+    void computeNeighbours();
     void computeCotangentWeights();
     Eigen::Matrix3f computeOptimalRotation(int i, const std::vector<Eigen::Vector3f>& p, 
                                           const std::vector<Eigen::Vector3f>& p_prime);
