@@ -273,6 +273,7 @@ void setupUI() {
   ImGui::SameLine();
   if (currentMesh && !currentMeshPath.empty()) {
     if (ImGui::Button("Reset Mesh")) {
+      clearSelection();
       loadMesh(currentMeshPath);
       statusMessage = "Mesh reset to original state";
     }
@@ -778,8 +779,12 @@ void vertexPickerCallback() {
                   << pr.position.x << "," << pr.position.y << "," << pr.position.z
                   << "), vertex=" << mpr.index << "\n";
 
-        selectedPoints.emplace_back(pr.position.x, pr.position.y, pr.position.z);
-        selectedVertexIndices.push_back(mpr.index);
+        if ( std::find(selectedVertexIndices.cbegin(), selectedVertexIndices.cend(), mpr.index) == selectedVertexIndices.cend() ) {
+          //selectedPoints.emplace_back(pr.position.x, pr.position.y, pr.position.z);
+          const auto& v = currentMesh->vertexPositions.getValue(mpr.index);
+          selectedPoints.emplace_back(v.x, v.y, v.z);          
+          selectedVertexIndices.push_back(mpr.index);
+        }          
         
         if (highlightPoints) {
           polyscope::removeStructure(highlightPoints->name);
