@@ -638,7 +638,12 @@ void vertexPickerCallback() {
           lastSampleTime     = now;
           dragStartScreen    = mpos;
           dragPlanePoint     = { pr.position.x, pr.position.y, pr.position.z };
-          dragPlaneNormal    = polyscope::view::getFrontVec();
+
+          // get current camera view instead of scene front view
+          glm::vec3 look, up, right;
+          polyscope::view::getCameraFrame(look, up, right);
+          dragPlaneNormal = glm::normalize(look);
+
           dragSamples.clear();
           dragSamples.push_back(dragPlanePoint);
           if (dragPath) {
