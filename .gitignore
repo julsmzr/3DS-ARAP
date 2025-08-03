@@ -18,3 +18,5 @@ imgui.ini
 #Benchmarks outputs
 /benchmark_data/
 /plots/*/*.png
+
+**.DS_Store
