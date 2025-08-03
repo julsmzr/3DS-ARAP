@@ -15,7 +15,8 @@ std::tuple<double, Eigen::MatrixXd, Eigen::MatrixXi> benchMarkSolver_us(const Me
                         const std::vector<Eigen::Vector3d>& constraintPoints, 
                         int iterations = 5, 
                         Solver::ARAPImplementation implementation = Solver::PAPER_ARAP,
-                        Solver::SolverType solverType = Solver::SolverType::CHOLESKY) {
+                        Solver::SolverType solverType = Solver::SolverType::CHOLESKY,
+                        Solver::PaperSolverType paperSolverType = Solver::PaperSolverType::PAPER_CHOLESKY) {
     
     Solver::ARAPSolver solver;
     Eigen::MatrixXd vertices;
@@ -34,7 +35,7 @@ std::tuple<double, Eigen::MatrixXd, Eigen::MatrixXi> benchMarkSolver_us(const Me
     solver.setArapImplementation(implementation);
     solver.setNumberofIterations(iterations);
     solver.setSolverType(solverType);
-    solver.setPaperSolverType(Solver::PAPER_CHOLESKY);  // Default to Cholesky for paper solver
+    solver.setPaperSolverType(paperSolverType);
     solver.setConstraints(constraintIndices, constraintPoints);
 
     auto startSampleTime = std::chrono::steady_clock::now();
@@ -58,7 +59,16 @@ std::string getSolverTypeName(Solver::SolverType type) {
     switch (type) {
         case Solver::SolverType::CHOLESKY: return "CHOLESKY";
         case Solver::SolverType::SPARSE_SCHUR: return "SPARSE_SCHUR";
+        case Solver::SolverType::CGNR: return "CGNR";
         default: return "UNKNOWN_SOLVER";
+    }
+}
+
+std::string getPaperSolverTypeName(Solver::PaperSolverType type) {
+    switch (type) {
+        case Solver::PaperSolverType::PAPER_CHOLESKY: return "PAPER_CHOLESKY";
+        case Solver::PaperSolverType::PAPER_LDLT: return "PAPER_LDLT";
+        default: return "UNKNOWN_PAPER_SOLVER";
     }
 }
 
@@ -162,9 +172,6 @@ int main() {
     // Load mesh
     std::string mesh_name = "cactus_highres";
 
-    Solver::ARAPImplementation implementation = Solver::CERES_ARAP;
-    Solver::SolverType solverType = Solver::SolverType::CHOLESKY;
-
     // Constraints
     std::vector<int> constraintIndices = {354, 611, 612, 609, 608, 594, 300, 292, 290, 288, 291, 315, 595, 306, 304, 584, 617, 358, 615, 591};
     std::vector<Eigen::Vector3d> constraintPoints = {
@@ -213,68 +220,98 @@ int main() {
 
     std::set<std::pair<int, int>> edgeSet = extractEdges(faces);
 
+    // Generate reference solution using IGL with high iterations
     int referenceIterations = 100;
-    auto [_, targetVertices,targetFaces] = benchMarkSolver_us(mesh, constraintIndices, constraintPoints, referenceIterations, Solver::ARAPImplementation::IGL_ARAP, solverType);
+    auto [_, targetVertices, targetFaces] = benchMarkSolver_us(mesh, constraintIndices, constraintPoints, 
+                                                               referenceIterations, Solver::ARAPImplementation::IGL_ARAP, 
+                                                               Solver::SolverType::CHOLESKY, Solver::PaperSolverType::PAPER_CHOLESKY);
 
-    std::stringstream fileName;
-    fileName << "benchmark_data/" << mesh_name <<"/arap_benchmark_"
-             << getImplementationName(implementation) << "_"
-             << getSolverTypeName(solverType) << ".csv";
-
-    std::stringstream plyDirName;
-    plyDirName << "benchmark_data/" << mesh_name <<"/arap_meshes_"
-             << getImplementationName(implementation) << "_"
-             << getSolverTypeName(solverType);
-    createDirectoryIfNotExists(plyDirName.str());
-    
-
+    // Save baseline mesh
     std::stringstream baselinePlyFileName;
-    baselinePlyFileName << "benchmark_data/" << mesh_name <<"/arap_mesh_baseline.ply";
+    baselinePlyFileName << "benchmark_data/" << mesh_name << "/arap_mesh_baseline.ply";
     writePLY(baselinePlyFileName.str(), targetVertices, targetFaces);
 
-    std::ofstream outFile(fileName.str());
-    if (!outFile.is_open()) {
-        std::cerr << "Failed to open output file!" << std::endl;
-        return 1;
-    }
+    // Define all solver combinations to test
+    std::vector<std::tuple<Solver::ARAPImplementation, Solver::SolverType, Solver::PaperSolverType, std::string>> solverConfigs = {
+        // PAPER_ARAP with different paper solver types
+        {Solver::PAPER_ARAP, Solver::CHOLESKY, Solver::PAPER_CHOLESKY, "PAPER_ARAP_PAPER_CHOLESKY"},
+        {Solver::PAPER_ARAP, Solver::CHOLESKY, Solver::PAPER_LDLT, "PAPER_ARAP_PAPER_LDLT"},
+        
+        // CERES_ARAP with different ceres solver types
+        {Solver::CERES_ARAP, Solver::CHOLESKY, Solver::PAPER_CHOLESKY, "CERES_ARAP_CHOLESKY"},
+        {Solver::CERES_ARAP, Solver::SPARSE_SCHUR, Solver::PAPER_CHOLESKY, "CERES_ARAP_SPARSE_SCHUR"},
+        {Solver::CERES_ARAP, Solver::CGNR, Solver::PAPER_CHOLESKY, "CERES_ARAP_CGNR"},
+        
+        // IGL_ARAP 
+        {Solver::IGL_ARAP, Solver::CHOLESKY, Solver::PAPER_CHOLESKY, "IGL_ARAP_CHOLESKY"}
+    };
 
-    outFile << "Iterations,Time(us),VertexChangeNorm,TargetError,EdgeLengthRelRMSError\n";
+    // Run benchmarks for all solver configurations
+    for (const auto& [implementation, solverType, paperSolverType, configName] : solverConfigs) {
+        std::cout << "\n=== Running benchmark for: " << configName << " ===" << std::endl;
+        
+        // Create output files
+        std::stringstream fileName;
+        fileName << "benchmark_data/" << mesh_name << "/arap_benchmark_" << configName << ".csv";
 
-    Eigen::MatrixXd prevVertices;
-    Eigen::MatrixXi prevFaces;
+        std::stringstream plyDirName;
+        plyDirName << "benchmark_data/" << mesh_name << "/arap_meshes_" << configName;
+        createDirectoryIfNotExists(plyDirName.str());
 
-    for (int i = 1; i < maxIterations; ++i) {
-        auto [dt, vertices, faces] = benchMarkSolver_us(mesh, constraintIndices, constraintPoints, i, implementation, solverType);
-
-        double vertexChangeRMSE = 0.0;
-        if (i > 1) {
-            Eigen::MatrixXd diff = vertices - prevVertices;
-            vertexChangeRMSE = std::sqrt((diff.array().square().sum()) / diff.size());
+        std::ofstream outFile(fileName.str());
+        if (!outFile.is_open()) {
+            std::cerr << "Failed to open output file: " << fileName.str() << std::endl;
+            continue;
         }
 
-        Eigen::MatrixXd targetDiff = vertices - targetVertices;
-        double targetErrorRMSE = std::sqrt((targetDiff.array().square().sum()) / targetDiff.size());
+        outFile << "Iterations,Time(us),VertexChangeNorm,TargetError,EdgeLengthRelRMSError\n";
 
-        double edgeLengthRelRMSE = computeRelativeEdgeLengthError(V0, vertices, edgeSet);
+        Eigen::MatrixXd prevVertices;
+        Eigen::MatrixXi prevFaces;
 
-        std::cerr << "Iterations: " << i
-                  << " | Time: " << dt << " us"
-                  << " | ΔV (RMSE): " << vertexChangeRMSE
-                  << " | Target RMSE: " << targetErrorRMSE
-                  << " | Edge RMSE: " << edgeLengthRelRMSE << std::endl;
+        // Run iterations for this solver configuration
+        for (int i = 1; i < maxIterations; ++i) {
+            try {
+                auto [dt, vertices, faces] = benchMarkSolver_us(mesh, constraintIndices, constraintPoints, 
+                                                              i, implementation, solverType, paperSolverType);
 
-        outFile << i << "," << dt << "," << vertexChangeRMSE << "," << targetErrorRMSE << "," << edgeLengthRelRMSE << "\n";
+                double vertexChangeRMSE = 0.0;
+                if (i > 1) {
+                    Eigen::MatrixXd diff = vertices - prevVertices;
+                    vertexChangeRMSE = std::sqrt((diff.array().square().sum()) / diff.size());
+                }
 
-        prevVertices = vertices;
-        prevFaces = faces;
-        if (saveIterations.count(i)) {
-            std::stringstream iterPlyFile;
-             iterPlyFile << plyDirName.str() << "/" << mesh_name << "_i" << i << ".ply";
-            writePLY(iterPlyFile.str(), vertices, faces);
+                Eigen::MatrixXd targetDiff = vertices - targetVertices;
+                double targetErrorRMSE = std::sqrt((targetDiff.array().square().sum()) / targetDiff.size());
+
+                double edgeLengthRelRMSE = computeRelativeEdgeLengthError(V0, vertices, edgeSet);
+
+                std::cout << configName << " - Iterations: " << i
+                          << " | Time: " << dt << " us"
+                          << " | ΔV (RMSE): " << vertexChangeRMSE
+                          << " | Target RMSE: " << targetErrorRMSE
+                          << " | Edge RMSE: " << edgeLengthRelRMSE << std::endl;
+
+                outFile << i << "," << dt << "," << vertexChangeRMSE << "," << targetErrorRMSE << "," << edgeLengthRelRMSE << "\n";
+
+                prevVertices = vertices;
+                prevFaces = faces;
+                
+                if (saveIterations.count(i)) {
+                    std::stringstream iterPlyFile;
+                    iterPlyFile << plyDirName.str() << "/" << mesh_name << "_i" << i << ".ply";
+                    writePLY(iterPlyFile.str(), vertices, faces);
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Error running " << configName << " at iteration " << i << ": " << e.what() << std::endl;
+                break;
+            }
         }
+
+        outFile.close();
+        std::cout << "Completed benchmark for: " << configName << std::endl;
     }
 
-    outFile.close();
-
+    std::cout << "\n=== All benchmarks completed! ===" << std::endl;
     return 0;
 }
