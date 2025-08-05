@@ -4,6 +4,7 @@
 #include <Eigen/Dense>
 #include <polyscope/surface_mesh.h>
 
+// Utility class for converting PLY meshes into datastructures to be processed by viewer and solver
 namespace MeshLoader {
   struct Mesh {
     std::vector<Eigen::Vector3d> vertices;
@@ -14,7 +15,7 @@ namespace MeshLoader {
   };
 
   Mesh loadPLY(const std::string& filepath);
- void writePLY(const std::string& filepath, const Mesh& mesh);
+  void writePLY(const std::string& filepath, const Mesh& mesh);
   polyscope::SurfaceMesh* displayMesh(const Mesh& mesh, const std::string& name);
 
 } // namespace MeshLoader

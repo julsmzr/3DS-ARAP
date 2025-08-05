@@ -13,6 +13,7 @@ using Eigen::Vector3d;
 
 namespace CeresSolver {
 
+// Ceres constraint for ensuring the transformed constraints stay fixed as specified by the viewer
 struct EqualityConstraint
 {
 	EqualityConstraint(const Vector3d& point_, double weight_)
@@ -23,7 +24,6 @@ struct EqualityConstraint
 	template<typename T>
 	bool operator()(const T* const pos, T* residual) const
 	{
-		// TODO: Implement the cost function
 		residual[0] = T(weight) * (T(point(0)) - pos[0]);
         residual[1] = T(weight) * (T(point(1)) - pos[1]);
         residual[2] = T(weight) * (T(point(2)) - pos[2]);
@@ -42,7 +42,7 @@ private:
     double weight;
 };
 
-
+// Ceres constraint for jointly optimizing the rotation and translations
 struct EnergyCostFunction
 {
 	EnergyCostFunction(const Vector3d& p_i_, const Vector3d& p_j_, double weight_)
@@ -66,7 +66,6 @@ struct EnergyCostFunction
 
         ceres::AngleAxisRotatePoint(angle, inputPoint, pos);
 
-		// TODO: Implement the cost function
         residual[0] = T(weight) * (delta[0] - pos[0]);
         residual[1] = T(weight) * (delta[1] - pos[1]);
         residual[2] = T(weight) * (delta[2] - pos[2]);
@@ -84,8 +83,5 @@ private:
 	const Vector3d delta_ij;
     double weight;
 };
-
-
-
 
 }    
