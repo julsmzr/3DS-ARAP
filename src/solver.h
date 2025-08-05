@@ -22,7 +22,7 @@ Eigen::Vector3d screenToWorld(
 enum ARAPImplementation {
     PAPER_ARAP,
     CERES_ARAP,
-    IGL_ARAP  // IGL implementation (mocked for now)
+    IGL_ARAP 
 };
 
 enum SolverType {
@@ -53,14 +53,17 @@ public:
     // Update a single vertex position (for interactive dragging)
     void updateVertex(int vertexIndex, const Eigen::Vector3d& newPosition);
 
+    // Set number of iterations
     void setNumberofIterations(int numIter) {
         numberOfIterations = numIter;
     }
 
+    // Set ARAP implementation
     void setArapImplementation(ARAPImplementation impl) {
         arapImplementation = impl;
     }
 
+    // Set solver for the paper implementation
     void setPaperSolverType(PaperSolverType paperSolver) {
         paperSolverType = paperSolver;
     }
@@ -78,19 +81,21 @@ public:
         }
     }
 
+    // Set solver for the ceres implementation
     void setSolverType(SolverType solverType_) {
         solvertype = solverType_;
     }
     
-    // Perform ARAP deformation
+    // Perform ARAP deformation for the chosen implementation
     void solveARAP();
 
+    //Perform ARAP deformation according to the original ARAP alternating optimization
     void solveARAPPaper();
     
-    //Perform ARAP deformation using Ceres
+    //Perform ARAP deformation using ceres as a joint-optimization problem
     void solveARAPCeres();
 
-    //Perform ARAP deformation using igl
+    //Perform ARAP deformation using libigl
     void solveARAPIgl();
     
     // Check if mesh is loaded
@@ -104,8 +109,7 @@ private:
     std::vector<int> constraintIndices_;
     std::vector<Eigen::Vector3d> constraintPositions_;
     
-    // ARAP data structures
-    //std::vector<std::vector<int>> neighbors_;
+    // ---- ARAP data structures ---- 
     std::vector<std::set<int>> neighbors_;
     std::vector<std::unordered_map<int, float>> weights_;
     bool weightsComputed_ = false;
@@ -115,11 +119,19 @@ private:
     SolverType solvertype = CHOLESKY;
     PaperSolverType paperSolverType = PAPER_CHOLESKY;
     
-    // ARAP implementation
+    // ---- ARAP implementation ----
+
+    //Computes the neighbours for each vertex
     void computeNeighbours();
+
+    //Jointly precomputes the neighbors and cotangent weights for each vertex
     void computeCotangentWeights();
+
+    //Computes the optimal Rotation using the SVD approach as described in the original ARAP Paper
     Eigen::Matrix3f computeOptimalRotation(int i, const std::vector<Eigen::Vector3f>& p, 
                                           const std::vector<Eigen::Vector3f>& p_prime);
+
+    // Builds the the discrete Laplace-Beltrami operator and sets up the right-hand side expression from equation (8) in the original ARAP paper thus formulating the Position step in the ARAP alternating optimization
     void buildLaplacianAndRHS(const std::vector<Eigen::Vector3f>& p, 
                              const std::vector<Eigen::Matrix3f>& R,
                              Eigen::SparseMatrix<float>& L, Eigen::MatrixXf& b);
