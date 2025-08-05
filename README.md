@@ -1,6 +1,6 @@
-# 3DS Interactive ARAP
+# Interactive ARAP
 
-We present **3DS Interactive ARAP**, an interactive **As-Rigid-As-Possible (ARAP)** mesh deformation system implemented in C++. The project features three different ARAP solver implementations, provides a flexible and extensible UI, and supports real-time visualizations, benchmarking, and error analysis.
+We present **Interactive ARAP**, an interactive **As-Rigid-As-Possible (ARAP)** mesh deformation system implemented in C++. The project features three different ARAP solver implementations, provides a flexible and extensible UI, and supports real-time visualizations, benchmarking, and error analysis.
 
 
 ##  Quick Start
