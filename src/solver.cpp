@@ -395,7 +395,6 @@ void ARAPSolver::solveARAPPaper() {
         } else {
             // Use LU solver
             Eigen::SparseLU<Eigen::SparseMatrix<float>> solver;
-            //L.makeCompressed();
             solver.compute(L);
             
             if (solver.info() != Eigen::Success) {

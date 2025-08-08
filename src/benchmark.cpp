@@ -171,8 +171,6 @@ void writePLY(const std::string& filepath,
 int main() {
     // Load mesh
     std::string mesh_name = "cactus_highres";
-    //std::string mesh_name = "dino";
-    //std::string mesh_name = "bar2";
 
     // Constraints
     // Cactus example
@@ -200,7 +198,9 @@ int main() {
     {877.991,793.445,517.462}
     };
     
-    /*
+    /* 
+    //Dino example
+    std::string mesh_name = "dino";
     std::vector<int> constraintIndices = {
         318, 887, 712, 607, 1196, 1164, 725, 1283, 1699, 1531,
         1280, 967, 783, 681, 274, 1009, 878, 273, 275, 479,
@@ -305,9 +305,12 @@ int main() {
         {-109.731,-361.985,-134.642},
         {-235.204,-335.379,141.738}
     };
+    */
 
-    
-   std::vector<int> constraintIndices = {
+    /* 
+    //Bar example
+    std::string mesh_name = "bar2";
+    std::vector<int> constraintIndices = {
         66, 67, 68, 69, 70, 54, 53, 52, 51, 50, 71, 55, 56, 72,
         73, 57, 58, 74, 75, 59, 60, 76, 77, 61, 78, 62, 79, 63,
         64, 80, 81, 65, 37 
