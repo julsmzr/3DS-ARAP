@@ -6,6 +6,9 @@
 #include <iostream>
 #include <algorithm>
 #include <igl/arap.h>
+#include <Eigen/Sparse>
+#include <Eigen/SparseQR>
+#include <Eigen/OrderingMethods>
 
 Eigen::Vector3d Solver::screenToWorld(
     const glm::vec2& screenCoords,
@@ -374,7 +377,7 @@ void ARAPSolver::solveARAPPaper() {
                 std::cerr << "[Solver] Cholesky solve failed" << std::endl;
                 return;
             }
-        } else {
+        } else if(paperSolverType == PAPER_LDLT) {
             // Use LDLT solver
             Eigen::SimplicialLDLT<Eigen::SparseMatrix<float>> solver;
             solver.compute(L);
@@ -387,6 +390,22 @@ void ARAPSolver::solveARAPPaper() {
             p_prime_mat = solver.solve(b);
             if (solver.info() != Eigen::Success) {
                 std::cerr << "[Solver] LDLT solve failed" << std::endl;
+                return;
+            }
+        } else {
+            // Use LU solver
+            Eigen::SparseLU<Eigen::SparseMatrix<float>> solver;
+            //L.makeCompressed();
+            solver.compute(L);
+            
+            if (solver.info() != Eigen::Success) {
+                std::cerr << "[Solver] LU factorization failed" << std::endl;
+                return;
+            }
+            
+            p_prime_mat = solver.solve(b);
+            if (solver.info() != Eigen::Success) {
+                std::cerr << "[Solver] LU solve failed" << std::endl;
                 return;
             }
         }
@@ -435,7 +454,6 @@ void ARAPSolver::solveARAPCeres() {
 
     
     for(size_t i = 0; i < constraintIndices_.size(); ++i) {
-        //const Vector3d& targetPoint, const double weight
         auto constraintFunction = CeresSolver::EqualityConstraint::create(constraintPositions_[i], 5.0);
         problem.AddResidualBlock(constraintFunction, nullptr, (double*) &p_prime[constraintIndices_[i]]);
     }
@@ -464,10 +482,6 @@ void ARAPSolver::solveARAPCeres() {
     
 	options.linear_solver_type = getSolverType();
     options.minimizer_progress_to_stdout = false;
-
-    //options.max_num_iterations = 10000;
-    //options.function_tolerance = 0.05;
-    //options.gradient_tolerance = 1e-4 * options.function_tolerance;
 
 	ceres::Solver::Summary summary;
     std::cout<<"Start solving" << std::endl;
