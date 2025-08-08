@@ -526,7 +526,7 @@ void setupUI() {
               statusMessage = "Ceres solver changed to " + std::string(ceresItems[selectedCeresSolver]);
           }
       } else { // Paper ARAP or IGL ARAP
-          const char* paperItems[] = { "Cholesky", "LDLT" };
+          const char* paperItems[] = { "Cholesky", "LDLT", "LU" };
           if (ImGui::Combo("##Solver", &selectedPaperSolver, paperItems, IM_ARRAYSIZE(paperItems))) {
               solver.setPaperSolverType(static_cast<Solver::PaperSolverType>(selectedPaperSolver));
               statusMessage = "Paper solver changed to " + std::string(paperItems[selectedPaperSolver]);

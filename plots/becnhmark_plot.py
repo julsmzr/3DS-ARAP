@@ -7,6 +7,7 @@ import re
 benchmark_files = [
     "arap_benchmark_PAPER_ARAP_PAPER_CHOLESKY.csv",
     "arap_benchmark_PAPER_ARAP_PAPER_LDLT.csv",
+    "arap_benchmark_PAPER_ARAP_PAPER_LU.csv",
     "arap_benchmark_CERES_ARAP_CHOLESKY.csv", 
     "arap_benchmark_CERES_ARAP_SPARSE_SCHUR.csv",
     # "arap_benchmark_CERES_ARAP_CGNR.csv",
@@ -26,6 +27,8 @@ def extract_label(filename):
         return "Paper ARAP (Cholesky)"
     elif "PAPER_ARAP_PAPER_LDLT" in filename:
         return "Paper ARAP (LDLT)"
+    elif "PAPER_ARAP_PAPER_LU" in filename:
+        return "Paper ARAP (LU)"
     elif "CERES_ARAP_CHOLESKY" in filename:
         return "Ceres ARAP (Cholesky)"
     elif "CERES_ARAP_SPARSE_SCHUR" in filename:

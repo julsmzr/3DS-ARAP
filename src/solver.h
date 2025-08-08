@@ -33,7 +33,8 @@ enum SolverType {
 
 enum PaperSolverType {
     PAPER_CHOLESKY,
-    PAPER_LDLT
+    PAPER_LDLT,
+    PAPER_LU
 };
 
 // ARAP Solver class to manage mesh data and deformation
